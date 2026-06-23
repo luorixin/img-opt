@@ -1,0 +1,7 @@
+services:
+  backend:
+    environment:
+      IOPAINT_BASE_URL: ${IOPAINT_BASE_URL:-http://host.docker.internal:8081}
+      IOPAINT_HEALTH_PATH: ${IOPAINT_HEALTH_PATH:-/docs}
+      IOPAINT_INPAINT_PATH: ${IOPAINT_INPAINT_PATH:-/api/v1/inpaint}
+      IOPAINT_TIMEOUT_SECONDS: ${IOPAINT_TIMEOUT_SECONDS:-180}

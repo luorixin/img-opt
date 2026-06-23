@@ -1,0 +1,306 @@
+:root {
+  color: #1d252c;
+  background: #f3f6f4;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input,
+a {
+  font: inherit;
+}
+
+.appShell {
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
+  min-height: 100vh;
+  color: #1d252c;
+}
+
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  border-right: 1px solid #d8dfdf;
+  background: #fbfcfb;
+}
+
+.uploadButton,
+.primaryButton,
+.secondaryButton,
+.downloadButton,
+.emptyDrop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px solid #bec9c6;
+  border-radius: 8px;
+  color: #1d252c;
+  background: #ffffff;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.uploadButton input,
+.emptyDrop input {
+  display: none;
+}
+
+.segmented,
+.iconRow {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.iconRow {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 38px;
+  border: 1px solid #c5cfcc;
+  border-radius: 8px;
+  color: #334148;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.iconButton.active {
+  border-color: #11835f;
+  color: #064d39;
+  background: #dff4eb;
+}
+
+.iconButton:disabled,
+.primaryButton:disabled,
+.secondaryButton:disabled,
+.downloadButton.disabled {
+  color: #98a4a2;
+  background: #eef2f1;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.control {
+  display: grid;
+  gap: 8px;
+  color: #435057;
+  font-size: 13px;
+}
+
+.control span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.control strong {
+  min-width: 32px;
+  color: #1d252c;
+  text-align: right;
+}
+
+.control input {
+  width: 100%;
+  accent-color: #11835f;
+}
+
+.primaryButton {
+  border-color: #11835f;
+  color: #ffffff;
+  background: #11835f;
+}
+
+.secondaryButton {
+  border-color: #6b5fbd;
+  color: #2f2a68;
+  background: #eeecfb;
+}
+
+.downloadButton {
+  border-color: #334148;
+}
+
+.statusLine {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 0;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  margin-top: auto;
+  color: #526167;
+  font-size: 13px;
+}
+
+.statusLine span {
+  overflow-wrap: anywhere;
+}
+
+.historyTick {
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 36vw);
+  gap: 1px;
+  min-width: 0;
+  background: #d8dfdf;
+}
+
+.canvasStage,
+.resultPane {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 100vh;
+  padding: 24px;
+  background: #eef3f1;
+}
+
+.canvasStage {
+  position: relative;
+  transition:
+    background-color 140ms ease,
+    outline-color 140ms ease;
+}
+
+.appShell.dragging .canvasStage {
+  outline: 3px dashed #11835f;
+  outline-offset: -14px;
+  background: #dff4eb;
+}
+
+.appShell.dragging .canvasStage::after {
+  content: "释放以上传图片";
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  z-index: 3;
+  transform: translateX(-50%);
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: #064d39;
+  background: #ffffff;
+  box-shadow: 0 10px 30px rgb(37 48 54 / 16%);
+  font-size: 13px;
+  pointer-events: none;
+}
+
+.canvasStack {
+  position: relative;
+  width: min(100%, 1120px);
+  max-height: calc(100vh - 48px);
+  background: #ffffff;
+  box-shadow: 0 18px 50px rgb(37 48 54 / 16%);
+}
+
+.paintCanvas,
+.maskCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.maskCanvas {
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.emptyDrop {
+  width: min(520px, 100%);
+  min-height: 240px;
+  flex-direction: column;
+  border-style: dashed;
+  color: #526167;
+  background: #ffffff;
+}
+
+.resultPane {
+  background: #f8faf9;
+}
+
+.resultPane img {
+  display: block;
+  width: min(100%, 720px);
+  max-height: calc(100vh - 48px);
+  object-fit: contain;
+  box-shadow: 0 18px 50px rgb(37 48 54 / 14%);
+}
+
+.resultEmpty {
+  display: grid;
+  place-items: center;
+  width: min(100%, 420px);
+  min-height: 220px;
+  border: 1px dashed #c2ceca;
+  border-radius: 8px;
+  color: #6d7a7f;
+  background: #ffffff;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 860px) {
+  .appShell {
+    grid-template-columns: 1fr;
+  }
+
+  .toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-right: 0;
+    border-bottom: 1px solid #d8dfdf;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .canvasStage,
+  .resultPane {
+    min-height: auto;
+    padding: 14px;
+  }
+
+  .canvasStack,
+  .resultPane img {
+    max-height: 72vh;
+  }
+}

@@ -1,0 +1,13 @@
+.venv/
+.iopaint-venv/
+node_modules/
+frontend/node_modules/
+frontend/dist/
+backend/.pytest_cache/
+.pytest_cache/
+.omx/
+.DS_Store
+*.pyc
+__pycache__/
+.env
+.env.local
