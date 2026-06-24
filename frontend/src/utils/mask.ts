@@ -38,6 +38,34 @@ export function hasPaintedPixels(mask: MaskData): boolean {
   return mask.alpha.some((value) => value > 0);
 }
 
+export function maskFromRgbaPixels(
+  pixels: Uint8ClampedArray,
+  width: number,
+  height: number,
+): MaskData {
+  if (pixels.length !== width * height * 4) {
+    throw new Error("Mask 像素尺寸不匹配");
+  }
+
+  const mask = createBlankMask(width, height);
+  for (let index = 0; index < mask.alpha.length; index += 1) {
+    mask.alpha[index] = pixels[index * 4 + 3] > 0 ? 255 : 0;
+  }
+  return mask;
+}
+
+export function mergeMasks(current: MaskData, incoming: MaskData): MaskData {
+  if (current.width !== incoming.width || current.height !== incoming.height) {
+    throw new Error("智能选区尺寸与原图不匹配");
+  }
+
+  const merged = cloneMask(current);
+  for (let index = 0; index < merged.alpha.length; index += 1) {
+    merged.alpha[index] = Math.max(merged.alpha[index], incoming.alpha[index]);
+  }
+  return merged;
+}
+
 export function maskToBlackWhiteRgba(mask: MaskData): Uint8ClampedArray<ArrayBuffer> {
   const pixels = new Uint8ClampedArray(mask.width * mask.height * 4) as Uint8ClampedArray<ArrayBuffer>;
 

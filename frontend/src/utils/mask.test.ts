@@ -6,8 +6,10 @@ import {
   cloneMask,
   createBlankMask,
   hasPaintedPixels,
+  maskFromRgbaPixels,
   maskToBlackWhiteRgba,
   mapClientPointToImagePoint,
+  mergeMasks,
 } from "./mask";
 
 describe("mask operations", () => {
@@ -91,5 +93,30 @@ describe("mask operations", () => {
       0, 0, 0, 255,
       255, 255, 255, 255,
     ]);
+  });
+
+  it("converts a plugin RGBA response into a binary mask", () => {
+    const mask = maskFromRgbaPixels(
+      new Uint8ClampedArray([
+        255, 203, 0, 0,
+        255, 203, 0, 186,
+      ]),
+      2,
+      1,
+    );
+
+    expect(Array.from(mask.alpha)).toEqual([0, 255]);
+  });
+
+  it("merges smart selections without mutating the current mask", () => {
+    const current = createBlankMask(2, 1);
+    current.alpha[0] = 255;
+    const incoming = createBlankMask(2, 1);
+    incoming.alpha[1] = 255;
+
+    const merged = mergeMasks(current, incoming);
+
+    expect(Array.from(merged.alpha)).toEqual([255, 255]);
+    expect(Array.from(current.alpha)).toEqual([255, 0]);
   });
 });

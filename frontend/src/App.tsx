@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { ImagePlus } from "lucide-react";
 
-import { inpaintImage } from "./api/api";
+import { inpaintImage, promptInpaintImage, segmentImageMask } from "./api/api";
 import {
   cropAndEnhanceImageBlob,
   imageToEnhancedResolutionBlob,
   imageToTransparentBackgroundBlob,
   loadImage,
   maskToPngBlob,
+  pngBlobToMaskData,
 } from "./utils/canvasExport";
 import { ResultPane } from "./components/ResultPane";
 import { Toolbar } from "./components/Toolbar";
@@ -16,124 +17,188 @@ import {
   calculateCropOutputSize,
   downloadBlob,
   downloadBlobs,
-  normalizeCropRect,
-  type CropRect,
 } from "./utils/crop";
 import {
-  applyBrushLine,
-  applyRectangle,
-  cloneMask,
   createBlankMask,
   hasPaintedPixels,
-  mapClientPointToImagePoint,
+  mergeMasks,
   type MaskData,
-  type Point,
 } from "./utils/mask";
-import { firstImageFile, hasDraggedFiles } from "./utils/fileSelection";
-import type { Tool } from "./types/types";
-
-type ImageState = {
-  file: File;
-  url: string;
-  width: number;
-  height: number;
-};
-
-type PreviewRect = {
-  start: Point;
-  end: Point;
-} | null;
-
-type OverlayState = {
-  maskRect: PreviewRect;
-  cropRects: CropRect[];
-  cropPreview: PreviewRect;
-};
-
-const MAX_HISTORY = 40;
+import { firstImageFile, hasDraggedFiles, imageFiles } from "./utils/fileSelection";
+import { processBatchImages, type BatchImageOperation } from "./utils/batchProcessing";
+import { useStore } from "./store/useStore";
+import { useShortcut } from "./hooks/useShortcut";
+import { useCanvasDrawing } from "./hooks/useCanvasDrawing";
+import { loadAppState } from "./utils/db";
 
 export default function App() {
-  const baseCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const imageElementRef = useRef<HTMLImageElement | null>(null);
-  const maskRef = useRef<MaskData | null>(null);
-  const historyRef = useRef<MaskData[]>([]);
-  const redoRef = useRef<MaskData[]>([]);
-  const drawingRef = useRef(false);
-  const lastPointRef = useRef<Point | null>(null);
-  const rectStartRef = useRef<Point | null>(null);
+  // Bind global hotkeys (Undo, Redo, Brush adjust, Tool selector)
+  useShortcut();
 
-  const [image, setImage] = useState<ImageState | null>(null);
-  const [tool, setTool] = useState<Tool>("rectangle");
-  const [brushSize, setBrushSize] = useState(24);
-  const [maskDilate, setMaskDilate] = useState(4);
-  const [maskBlur, setMaskBlur] = useState(2);
-  const [backgroundTolerance, setBackgroundTolerance] = useState(18);
-  const [upscaleFactor, setUpscaleFactor] = useState(2);
-  const [previewRect, setPreviewRect] = useState<PreviewRect>(null);
-  const [cropRects, setCropRects] = useState<CropRect[]>([]);
-  const [cropPreview, setCropPreview] = useState<PreviewRect>(null);
-  const [resultUrl, setResultUrl] = useState<string | null>(null);
-  const [resultFilename, setResultFilename] = useState("cleaned.png");
-  const [busy, setBusy] = useState(false);
-  const [draggingUpload, setDraggingUpload] = useState(false);
+  // Setup refs, drawing pointer events, offscreen canvas cache, and paint schedule
+  const {
+    baseCanvasRef,
+    overlayCanvasRef,
+    imageElementRef,
+    pointerEvents,
+    reloadOverlay,
+  } = useCanvasDrawing();
+
   const dragDepthRef = useRef(0);
-  const [status, setStatus] = useState("等待图片");
-  const [historyTick, setHistoryTick] = useState(0);
 
-  const renderBase = useCallback(() => {
-    const canvas = baseCanvasRef.current;
-    const source = imageElementRef.current;
-    if (!canvas || !source || !image) return;
+  // Subscribe to Zustand state
+  const image = useStore((state) => state.image);
+  const tool = useStore((state) => state.tool);
+  const brushSize = useStore((state) => state.brushSize);
+  const maskDilate = useStore((state) => state.maskDilate);
+  const maskBlur = useStore((state) => state.maskBlur);
+  const backgroundTolerance = useStore((state) => state.backgroundTolerance);
+  const upscaleFactor = useStore((state) => state.upscaleFactor);
+  const prompt = useStore((state) => state.prompt);
+  const resultUrl = useStore((state) => state.resultUrl);
+  const resultFilename = useStore((state) => state.resultFilename);
+  const status = useStore((state) => state.status);
+  const busy = useStore((state) => state.busy);
+  const draggingUpload = useStore((state) => state.draggingUpload);
+  const historyTick = useStore((state) => state.historyTick);
+  const cropRects = useStore((state) => state.cropRects);
+  const historyStack = useStore((state) => state.historyStack);
+  const redoStack = useStore((state) => state.redoStack);
+  const smartSegmentPoint = useStore((state) => state.smartSegmentPoint);
+  const smartSegmentRequestId = useStore((state) => state.smartSegmentRequestId);
 
-    canvas.width = image.width;
-    canvas.height = image.height;
-    const context = canvas.getContext("2d");
-    if (!context) return;
-    context.clearRect(0, 0, image.width, image.height);
-    context.drawImage(source, 0, 0, image.width, image.height);
-  }, [image]);
+  // Zoom & Pan
+  const zoom = useStore((state) => state.zoom);
+  const panX = useStore((state) => state.panX);
+  const panY = useStore((state) => state.panY);
+  const spacePressed = useStore((state) => state.spacePressed);
+  const isPanning = useStore((state) => state.isPanning);
 
-  const renderOverlay = useCallback((overlay: Partial<OverlayState> = {}) => {
-    const canvas = overlayCanvasRef.current;
-    const mask = maskRef.current;
-    if (!canvas || !mask) return;
+  // Actions
+  const setTool = useStore((state) => state.setTool);
+  const setBrushSize = useStore((state) => state.setBrushSize);
+  const setMaskDilate = useStore((state) => state.setMaskDilate);
+  const setMaskBlur = useStore((state) => state.setMaskBlur);
+  const setBackgroundTolerance = useStore((state) => state.setBackgroundTolerance);
+  const setUpscaleFactor = useStore((state) => state.setUpscaleFactor);
+  const setPrompt = useStore((state) => state.setPrompt);
+  const setDraggingUpload = useStore((state) => state.setDraggingUpload);
+  const undo = useStore((state) => state.undo);
+  const redoAction = useStore((state) => state.redo);
+  const clearMask = useStore((state) => state.clearMask);
+  const clearCropRects = useStore((state) => state.clearCropRects);
+  const setStatus = useStore((state) => state.setStatus);
+  const setBusy = useStore((state) => state.setBusy);
+  const setResultUrl = useStore((state) => state.setResultUrl);
+  const setResultFilename = useStore((state) => state.setResultFilename);
+  const resetZoomPan = useStore((state) => state.resetZoomPan);
 
-    canvas.width = mask.width;
-    canvas.height = mask.height;
-    const context = canvas.getContext("2d");
-    if (!context) return;
+  // Load persistent state from IndexedDB when app mounts
+  useEffect(() => {
+    async function initFromDB() {
+      try {
+        const saved = await loadAppState();
+        if (!saved || !saved.imageFile) return;
 
-    const pixels = new Uint8ClampedArray(mask.width * mask.height * 4);
-    for (let index = 0; index < mask.alpha.length; index += 1) {
-      const offset = index * 4;
-      pixels[offset] = 255;
-      pixels[offset + 1] = 74;
-      pixels[offset + 2] = 93;
-      pixels[offset + 3] = mask.alpha[index] > 0 ? 118 : 0;
+        const { imageFile, mask, cropRects: savedCropRects, settings } = saved;
+        const url = URL.createObjectURL(imageFile);
+        const loaded = await loadImage(url);
+
+        const loadedMask: MaskData = mask
+          ? {
+              width: mask.width,
+              height: mask.height,
+              alpha: mask.alpha,
+            }
+          : createBlankMask(loaded.naturalWidth, loaded.naturalHeight);
+
+        useStore.setState({
+          image: {
+            file: imageFile,
+            url,
+            width: loaded.naturalWidth,
+            height: loaded.naturalHeight,
+          },
+          mask: loadedMask,
+          cropRects: savedCropRects || [],
+          tool: settings.tool || "rectangle",
+          brushSize: settings.brushSize ?? 24,
+          maskDilate: settings.maskDilate ?? 4,
+          maskBlur: settings.maskBlur ?? 2,
+          backgroundTolerance: settings.backgroundTolerance ?? 18,
+          upscaleFactor: settings.upscaleFactor ?? 2,
+          status: `已载入上次工作区 (${loaded.naturalWidth}x${loaded.naturalHeight})`,
+          zoom: 1.0,
+          panX: 0,
+          panY: 0,
+          isPanning: false,
+        });
+      } catch (error) {
+        console.error("Failed to restore saved workspace from IndexedDB", error);
+      }
     }
-    context.putImageData(new ImageData(pixels, mask.width, mask.height), 0, 0);
-
-    drawPreviewRect(context, mask.width, overlay.maskRect ?? null, "#19a974");
-
-    const crops = overlay.cropRects ?? [];
-    for (let index = 0; index < crops.length; index += 1) {
-      drawCropRect(context, mask.width, crops[index], index + 1);
-    }
-    drawPreviewRect(context, mask.width, overlay.cropPreview ?? null, "#5b5ce2");
+    void initFromDB();
   }, []);
 
-  useEffect(() => {
-    renderBase();
-    renderOverlay({ maskRect: previewRect, cropRects, cropPreview });
-  }, [cropPreview, cropRects, previewRect, renderBase, renderOverlay]);
-
+  // Cleanup Object URLs to prevent memory leaks
   useEffect(() => {
     return () => {
       if (image?.url) URL.revokeObjectURL(image.url);
       if (resultUrl) URL.revokeObjectURL(resultUrl);
     };
   }, [image?.url, resultUrl]);
+
+  useEffect(() => {
+    if (!smartSegmentPoint || smartSegmentRequestId === 0) return;
+    const activeImage = useStore.getState().image;
+    if (!activeImage || useStore.getState().busy) return;
+    const point = smartSegmentPoint;
+    const selectedImage = activeImage;
+
+    let cancelled = false;
+    async function runSmartSegment() {
+      setBusy(true);
+      setStatus(`智能选区处理中：${point.x}, ${point.y}`);
+      try {
+        const maskBlob = await segmentImageMask({
+          image: selectedImage.file,
+          x: point.x,
+          y: point.y,
+        });
+        const generatedMask = await pngBlobToMaskData(maskBlob);
+        if (cancelled || useStore.getState().image?.file !== selectedImage.file) return;
+
+        const currentMask = useStore.getState().mask;
+        if (!currentMask) return;
+        useStore.getState().pushHistory();
+        useStore.setState((state) => ({
+          mask: mergeMasks(currentMask, generatedMask),
+          redoStack: [],
+          historyTick: state.historyTick + 1,
+          status: "智能选区已添加，可继续点击或用橡皮擦修整",
+        }));
+        useStore.getState().persistToDB();
+        reloadOverlay();
+      } catch (error) {
+        if (!cancelled) {
+          setStatus(error instanceof Error ? error.message : "智能选区失败");
+        }
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    }
+
+    void runSmartSegment();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    reloadOverlay,
+    setBusy,
+    setStatus,
+    smartSegmentPoint,
+    smartSegmentRequestId,
+  ]);
 
   async function handleImageUpload(file: File | null) {
     if (!file) return;
@@ -143,34 +208,48 @@ export default function App() {
     }
 
     const url = URL.createObjectURL(file);
-    const loaded = await loadImage(url);
-    if (image?.url) URL.revokeObjectURL(image.url);
-    if (resultUrl) URL.revokeObjectURL(resultUrl);
+    try {
+      const loaded = await loadImage(url);
 
-    imageElementRef.current = loaded;
-    maskRef.current = createBlankMask(loaded.naturalWidth, loaded.naturalHeight);
-    historyRef.current = [];
-    redoRef.current = [];
-    setHistoryTick((value) => value + 1);
-    setResultUrl(null);
-    setResultFilename("cleaned.png");
-    setPreviewRect(null);
-    setCropRects([]);
-    setCropPreview(null);
-    setImage({
-      file,
-      url,
-      width: loaded.naturalWidth,
-      height: loaded.naturalHeight,
-    });
-    setStatus(`${loaded.naturalWidth} x ${loaded.naturalHeight}`);
+      // Clean up previous URLs
+      if (image?.url) URL.revokeObjectURL(image.url);
+      if (resultUrl) URL.revokeObjectURL(resultUrl);
+
+      useStore.setState({
+        image: {
+          file,
+          url,
+          width: loaded.naturalWidth,
+          height: loaded.naturalHeight,
+        },
+        mask: createBlankMask(loaded.naturalWidth, loaded.naturalHeight),
+        historyStack: [],
+        redoStack: [],
+        resultUrl: null,
+        resultFilename: "cleaned.png",
+        previewRect: null,
+        cropRects: [],
+        cropPreview: null,
+        status: `${loaded.naturalWidth} x ${loaded.naturalHeight}`,
+        zoom: 1.0,
+        panX: 0,
+        panY: 0,
+        isPanning: false,
+      });
+      useStore.getState().persistToDB();
+    } catch (err) {
+      console.error(err);
+      setStatus("加载图片失败");
+    }
   }
 
+  // Ref helper for pasting handler to capture latest context
   const handleImageUploadRef = useRef(handleImageUpload);
   useEffect(() => {
     handleImageUploadRef.current = handleImageUpload;
   });
 
+  // Clipboard Paste listener
   useEffect(() => {
     const handlePaste = (event: ClipboardEvent) => {
       const items = event.clipboardData?.items;
@@ -232,144 +311,10 @@ export default function App() {
     void handleImageUpload(file);
   }
 
-  function beginStroke(event: React.PointerEvent<HTMLCanvasElement>) {
-    const point = pointerToPoint(event);
-    if (!point || !maskRef.current) return;
-
-    event.currentTarget.setPointerCapture(event.pointerId);
-    drawingRef.current = true;
-    lastPointRef.current = point;
-
-    if (tool === "crop") {
-      rectStartRef.current = point;
-      setCropPreview({ start: point, end: point });
-      return;
-    }
-
-    pushHistory();
-
-    if (tool === "rectangle") {
-      rectStartRef.current = point;
-      setPreviewRect({ start: point, end: point });
-      return;
-    }
-
-    applyBrushLine(maskRef.current, point, point, brushSize / 2, tool === "eraser" ? "erase" : "paint");
-    renderOverlay({ cropRects });
-  }
-
-  function continueStroke(event: React.PointerEvent<HTMLCanvasElement>) {
-    if (!drawingRef.current || !maskRef.current) return;
-    const point = pointerToPoint(event);
-    if (!point) return;
-
-    if (tool === "rectangle") {
-      const start = rectStartRef.current;
-      if (start) setPreviewRect({ start, end: point });
-      return;
-    }
-
-    if (tool === "crop") {
-      const start = rectStartRef.current;
-      if (start) setCropPreview({ start, end: point });
-      return;
-    }
-
-    const previous = lastPointRef.current ?? point;
-    applyBrushLine(maskRef.current, previous, point, brushSize / 2, tool === "eraser" ? "erase" : "paint");
-    lastPointRef.current = point;
-    renderOverlay({ cropRects });
-  }
-
-  function endStroke(event: React.PointerEvent<HTMLCanvasElement>) {
-    if (!drawingRef.current || !maskRef.current) return;
-    const point = pointerToPoint(event) ?? lastPointRef.current;
-    let nextCropRects = cropRects;
-
-    if (tool === "rectangle" && rectStartRef.current && point) {
-      applyRectangle(maskRef.current, rectStartRef.current, point, "paint");
-    }
-
-    if (tool === "crop" && rectStartRef.current && point) {
-      const rect = normalizeCropRect(rectStartRef.current, point, maskRef.current.width, maskRef.current.height);
-      if (rect) {
-        nextCropRects = [...cropRects, rect];
-        setCropRects(nextCropRects);
-        setStatus(`已选 ${nextCropRects.length} 个切图区域，新增 ${rect.width} x ${rect.height}`);
-      } else {
-        setStatus("切图选区太小");
-      }
-    }
-
-    drawingRef.current = false;
-    lastPointRef.current = null;
-    rectStartRef.current = null;
-    setPreviewRect(null);
-    setCropPreview(null);
-    redoRef.current = [];
-    setHistoryTick((value) => value + 1);
-    renderOverlay({ cropRects: nextCropRects });
-  }
-
-  function pointerToPoint(event: React.PointerEvent<HTMLCanvasElement>): Point | null {
-    const canvas = overlayCanvasRef.current;
-    const mask = maskRef.current;
-    if (!canvas || !mask) return null;
-    return mapClientPointToImagePoint(
-      event.clientX,
-      event.clientY,
-      canvas.getBoundingClientRect(),
-      mask.width,
-      mask.height,
-    );
-  }
-
-  function pushHistory() {
-    const mask = maskRef.current;
-    if (!mask) return;
-    historyRef.current = [...historyRef.current.slice(-(MAX_HISTORY - 1)), cloneMask(mask)];
-  }
-
-  function undo() {
-    const current = maskRef.current;
-    const previous = historyRef.current.pop();
-    if (!current || !previous) return;
-    redoRef.current.push(cloneMask(current));
-    maskRef.current = previous;
-    setHistoryTick((value) => value + 1);
-    renderOverlay({ cropRects });
-  }
-
-  function redo() {
-    const current = maskRef.current;
-    const next = redoRef.current.pop();
-    if (!current || !next) return;
-    historyRef.current.push(cloneMask(current));
-    maskRef.current = next;
-    setHistoryTick((value) => value + 1);
-    renderOverlay({ cropRects });
-  }
-
-  function clearMask() {
-    const mask = maskRef.current;
-    if (!mask) return;
-    pushHistory();
-    maskRef.current = createBlankMask(mask.width, mask.height);
-    redoRef.current = [];
-    setHistoryTick((value) => value + 1);
-    renderOverlay({ cropRects });
-  }
-
-  function clearCropRects() {
-    setCropRects([]);
-    setCropPreview(null);
-    setStatus("已清空切图区域");
-  }
-
   async function repairImage() {
-    const mask = maskRef.current;
-    if (!image || !mask) return;
-    if (!hasPaintedPixels(mask)) {
+    const activeMask = useStore.getState().mask;
+    if (!image || !activeMask) return;
+    if (!hasPaintedPixels(activeMask)) {
       setStatus("Mask 为空");
       return;
     }
@@ -377,12 +322,13 @@ export default function App() {
     setBusy(true);
     setStatus("修复中");
     try {
-      const maskBlob = await maskToPngBlob(mask);
+      const maskBlob = await maskToPngBlob(activeMask);
       const result = await inpaintImage({
         image: image.file,
         mask: maskBlob,
         maskDilate,
         maskBlur,
+        onProgress: setStatus,
       });
       if (resultUrl) URL.revokeObjectURL(resultUrl);
       setResultUrl(URL.createObjectURL(result));
@@ -464,10 +410,89 @@ export default function App() {
     }
   }
 
-  const canUndo = historyRef.current.length > 0;
-  const canRedo = redoRef.current.length > 0;
+  async function processBatch(operation: BatchImageOperation, fileList: FileList | null) {
+    const files = fileList ? imageFiles(fileList) : [];
+    if (files.length === 0) {
+      setStatus("请选择要批量处理的图片");
+      return;
+    }
+
+    setBusy(true);
+    setStatus(`批量处理中，0 / ${files.length}`);
+    try {
+      const results = await processBatchImages(
+        files,
+        operation,
+        async (source) => {
+          if (operation === "transparent") {
+            return imageToTransparentBackgroundBlob(source, backgroundTolerance);
+          }
+          return imageToEnhancedResolutionBlob(source, upscaleFactor, 0.65);
+        },
+        ({ current, total, filename }) => {
+          const label = operation === "transparent" ? "透明" : "清晰";
+          setStatus(`批量${label}处理中，${current} / ${total}：${filename}`);
+        },
+      );
+
+      if (results.length === 0) {
+        setStatus("没有可处理的图片");
+        return;
+      }
+
+      const lastResult = results[results.length - 1];
+      if (resultUrl) URL.revokeObjectURL(resultUrl);
+      setResultUrl(URL.createObjectURL(lastResult.blob));
+      setResultFilename(lastResult.filename);
+      downloadBlobs(results.map(({ blob, filename }) => ({ blob, filename })), downloadBlob);
+      setStatus(`批量完成，已下载 ${results.length} 张`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "批量处理失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function redrawWithPrompt() {
+    const activeMask = useStore.getState().mask;
+    if (!image || !activeMask) return;
+    if (!hasPaintedPixels(activeMask)) {
+      setStatus("请先绘制或生成 Mask");
+      return;
+    }
+    const activePrompt = prompt.trim();
+    if (!activePrompt) {
+      setStatus("请输入重绘提示词");
+      return;
+    }
+
+    setBusy(true);
+    setStatus("提示词重绘处理中");
+    try {
+      const maskBlob = await maskToPngBlob(activeMask);
+      const result = await promptInpaintImage({
+        image: image.file,
+        mask: maskBlob,
+        prompt: activePrompt,
+        onProgress: setStatus,
+      });
+      if (resultUrl) URL.revokeObjectURL(resultUrl);
+      setResultUrl(URL.createObjectURL(result));
+      setResultFilename("prompt-inpaint.png");
+      setStatus("提示词重绘完成");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "提示词重绘失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const canUndo = historyStack.length > 0;
+  const canRedo = redoStack.length > 0;
   const hasImage = image !== null;
   const canCrop = cropRects.length > 0;
+  const currentMask = useStore.getState().mask;
+  const canPromptInpaint = currentMask !== null && hasPaintedPixels(currentMask);
 
   return (
     <main
@@ -484,10 +509,12 @@ export default function App() {
         maskBlur={maskBlur}
         backgroundTolerance={backgroundTolerance}
         upscaleFactor={upscaleFactor}
+        prompt={prompt}
         canUndo={canUndo}
         canRedo={canRedo}
         hasImage={hasImage}
         canCrop={canCrop}
+        canPromptInpaint={canPromptInpaint}
         busy={busy}
         resultUrl={resultUrl}
         resultFilename={resultFilename}
@@ -499,30 +526,43 @@ export default function App() {
         onMaskBlurChange={setMaskBlur}
         onBackgroundToleranceChange={setBackgroundTolerance}
         onUpscaleFactorChange={setUpscaleFactor}
+        onPromptChange={setPrompt}
         onImageSelected={(file) => void handleImageUpload(firstImageFile(file ? [file] : []))}
         onUndo={undo}
-        onRedo={redo}
+        onRedo={redoAction}
         onClearMask={clearMask}
         onClearCropRects={clearCropRects}
-        onReloadOverlay={() => renderOverlay({ maskRect: previewRect, cropRects, cropPreview })}
+        onReloadOverlay={reloadOverlay}
         onRepair={() => void repairImage()}
         onTransparentBackground={() => void makeBackgroundTransparent()}
         onEnhanceResolution={() => void enhanceResolution()}
         onCropAndDownload={() => void cropAndDownload()}
+        onPromptInpaint={() => void redrawWithPrompt()}
+        onBatchImagesSelected={(operation, files) => void processBatch(operation, files)}
+        zoom={zoom}
+        onResetZoomPan={resetZoomPan}
       />
 
       <section className="workspace" aria-label="编辑区">
         <div className="canvasStage">
           {image ? (
-            <div className="canvasStack" style={{ aspectRatio: `${image.width} / ${image.height}` }}>
+            <div
+              className="canvasStack"
+              style={{
+                aspectRatio: `${image.width} / ${image.height}`,
+                transform: `translate3d(${panX}px, ${panY}px, 0) scale(${zoom})`,
+                transformOrigin: "center",
+                transition: isPanning ? "none" : "transform 0.08s ease-out",
+              }}
+            >
               <canvas ref={baseCanvasRef} className="paintCanvas" />
               <canvas
                 ref={overlayCanvasRef}
                 className="maskCanvas"
-                onPointerDown={beginStroke}
-                onPointerMove={continueStroke}
-                onPointerUp={endStroke}
-                onPointerCancel={endStroke}
+                style={{
+                  cursor: isPanning ? "grabbing" : spacePressed ? "grab" : "crosshair",
+                }}
+                {...pointerEvents}
               />
             </div>
           ) : (
@@ -542,45 +582,4 @@ export default function App() {
       </section>
     </main>
   );
-}
-
-function drawPreviewRect(
-  context: CanvasRenderingContext2D,
-  imageWidth: number,
-  rect: PreviewRect,
-  color: string,
-) {
-  if (!rect) return;
-  const x = Math.min(rect.start.x, rect.end.x);
-  const y = Math.min(rect.start.y, rect.end.y);
-  const width = Math.abs(rect.end.x - rect.start.x);
-  const height = Math.abs(rect.end.y - rect.start.y);
-  context.save();
-  context.strokeStyle = color;
-  context.lineWidth = Math.max(2, Math.round(imageWidth / 600));
-  context.setLineDash([10, 6]);
-  context.strokeRect(x, y, width, height);
-  context.restore();
-}
-
-function drawCropRect(context: CanvasRenderingContext2D, imageWidth: number, rect: CropRect, index: number) {
-  const lineWidth = Math.max(2, Math.round(imageWidth / 600));
-  context.save();
-  context.fillStyle = "rgb(91 92 226 / 12%)";
-  context.strokeStyle = "#5b5ce2";
-  context.lineWidth = lineWidth;
-  context.setLineDash([12, 6]);
-  context.fillRect(rect.x, rect.y, rect.width, rect.height);
-  context.strokeRect(rect.x, rect.y, rect.width, rect.height);
-  context.setLineDash([]);
-  context.fillStyle = "#5b5ce2";
-  context.font = `${Math.max(12, Math.round(imageWidth / 90))}px sans-serif`;
-  const label = String(index);
-  const metrics = context.measureText(label);
-  const labelWidth = Math.ceil(metrics.width + 12);
-  const labelHeight = Math.max(18, Math.round(imageWidth / 34));
-  context.fillRect(rect.x, Math.max(0, rect.y - labelHeight), labelWidth, labelHeight);
-  context.fillStyle = "#ffffff";
-  context.fillText(label, rect.x + 6, Math.max(14, rect.y - Math.round(labelHeight * 0.28)));
-  context.restore();
 }

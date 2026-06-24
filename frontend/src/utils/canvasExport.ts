@@ -1,4 +1,4 @@
-import { maskToBlackWhiteRgba, type MaskData } from "./mask";
+import { maskFromRgbaPixels, maskToBlackWhiteRgba, type MaskData } from "./mask";
 import { applyTransparentBackground } from "./backgroundTransparency";
 import { applyUnsharpMask, calculateUpscaledSize } from "./resolutionEnhancement";
 import { calculateCropOutputSize, type CropRect } from "./crop";
@@ -27,6 +27,24 @@ export function maskToPngBlob(mask: MaskData): Promise<Blob> {
       else reject(new Error("Mask 导出失败"));
     }, "image/png");
   });
+}
+
+export async function pngBlobToMaskData(blob: Blob): Promise<MaskData> {
+  const url = URL.createObjectURL(blob);
+  try {
+    const image = await loadImage(url);
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("无法读取智能选区");
+
+    context.drawImage(image, 0, 0);
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    return maskFromRgbaPixels(imageData.data, canvas.width, canvas.height);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 export function imageToTransparentBackgroundBlob(

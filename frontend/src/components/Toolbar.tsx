@@ -6,6 +6,7 @@ import {
   ImagePlus,
   Crop,
   Loader2,
+  Images,
   Maximize2,
   MousePointer2,
   Redo2,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react";
 
 import type { Tool } from "../types/types";
+import type { BatchImageOperation } from "../utils/batchProcessing";
 
 type ToolbarProps = {
   tool: Tool;
@@ -26,10 +28,12 @@ type ToolbarProps = {
   maskBlur: number;
   backgroundTolerance: number;
   upscaleFactor: number;
+  prompt: string;
   canUndo: boolean;
   canRedo: boolean;
   hasImage: boolean;
   canCrop: boolean;
+  canPromptInpaint: boolean;
   busy: boolean;
   resultUrl: string | null;
   resultFilename: string;
@@ -41,6 +45,7 @@ type ToolbarProps = {
   onMaskBlurChange: (value: number) => void;
   onBackgroundToleranceChange: (value: number) => void;
   onUpscaleFactorChange: (value: number) => void;
+  onPromptChange: (value: string) => void;
   onImageSelected: (file: File | null) => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -51,6 +56,10 @@ type ToolbarProps = {
   onTransparentBackground: () => void;
   onEnhanceResolution: () => void;
   onCropAndDownload: () => void;
+  onPromptInpaint: () => void;
+  onBatchImagesSelected: (operation: BatchImageOperation, files: FileList | null) => void;
+  zoom: number;
+  onResetZoomPan: () => void;
 };
 
 export function Toolbar({
@@ -60,10 +69,12 @@ export function Toolbar({
   maskBlur,
   backgroundTolerance,
   upscaleFactor,
+  prompt,
   canUndo,
   canRedo,
   hasImage,
   canCrop,
+  canPromptInpaint,
   busy,
   resultUrl,
   resultFilename,
@@ -75,6 +86,7 @@ export function Toolbar({
   onMaskBlurChange,
   onBackgroundToleranceChange,
   onUpscaleFactorChange,
+  onPromptChange,
   onImageSelected,
   onUndo,
   onRedo,
@@ -85,6 +97,10 @@ export function Toolbar({
   onTransparentBackground,
   onEnhanceResolution,
   onCropAndDownload,
+  onPromptInpaint,
+  onBatchImagesSelected,
+  zoom,
+  onResetZoomPan,
 }: ToolbarProps) {
   return (
     <aside className="toolbar" aria-label="工具栏">
@@ -104,6 +120,9 @@ export function Toolbar({
         </IconButton>
         <IconButton active={tool === "rectangle"} title="框选" onClick={() => onToolChange("rectangle")}>
           <SquareDashedMousePointer size={18} />
+        </IconButton>
+        <IconButton active={tool === "smart"} title="智能选区" onClick={() => onToolChange("smart")}>
+          <MousePointer2 size={18} />
         </IconButton>
         <IconButton active={tool === "eraser"} title="橡皮擦" onClick={() => onToolChange("eraser")}>
           <Eraser size={18} />
@@ -202,6 +221,61 @@ export function Toolbar({
       <button className="secondaryButton" disabled={!hasImage || busy || !canCrop} onClick={onCropAndDownload}>
         <Crop size={18} />
         <span>切图</span>
+      </button>
+
+      <label className="textControl">
+        <span>重绘提示词</span>
+        <textarea
+          value={prompt}
+          maxLength={1000}
+          rows={3}
+          placeholder="例如：一只橘猫"
+          onChange={(event) => onPromptChange(event.target.value)}
+        />
+      </label>
+
+      <button
+        className="secondaryButton"
+        disabled={!hasImage || !canPromptInpaint || !prompt.trim() || busy}
+        onClick={onPromptInpaint}
+      >
+        <Sparkles size={18} />
+        <span>重绘</span>
+      </button>
+
+      <label className={`secondaryButton batchButton ${busy ? "disabled" : ""}`} title="批量透明背景">
+        <Images size={18} />
+        <span>批量透明</span>
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          multiple
+          disabled={busy}
+          onChange={(event) => {
+            onBatchImagesSelected("transparent", event.target.files);
+            event.currentTarget.value = "";
+          }}
+        />
+      </label>
+
+      <label className={`secondaryButton batchButton ${busy ? "disabled" : ""}`} title="批量清晰增强">
+        <Maximize2 size={18} />
+        <span>批量清晰</span>
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          multiple
+          disabled={busy}
+          onChange={(event) => {
+            onBatchImagesSelected("enhance", event.target.files);
+            event.currentTarget.value = "";
+          }}
+        />
+      </label>
+
+      <button className="secondaryButton" disabled={!hasImage} onClick={onResetZoomPan}>
+        <RotateCcw size={18} />
+        <span>重置视图 ({Math.round(zoom * 100)}%)</span>
       </button>
 
       <a className={`downloadButton ${resultUrl ? "" : "disabled"}`} href={resultUrl ?? undefined} download={resultFilename}>

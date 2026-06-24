@@ -1,22 +1,69 @@
 services:
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
     environment:
+      API_TOKEN: ${API_TOKEN:-}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
       FRONTEND_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
       IOPAINT_BASE_URL: ${IOPAINT_BASE_URL:-http://iopaint:8081}
       IOPAINT_HEALTH_PATH: ${IOPAINT_HEALTH_PATH:-/docs}
       IOPAINT_INPAINT_PATH: ${IOPAINT_INPAINT_PATH:-/api/v1/inpaint}
+      IOPAINT_SEGMENT_PATH: ${IOPAINT_SEGMENT_PATH:-/api/v1/run_plugin_gen_mask}
+      IOPAINT_SEGMENT_PLUGIN_NAME: ${IOPAINT_SEGMENT_PLUGIN_NAME:-InteractiveSeg}
       IOPAINT_TIMEOUT_SECONDS: ${IOPAINT_TIMEOUT_SECONDS:-120}
+      IOPAINT_PROMPT_BASE_URL: ${IOPAINT_PROMPT_BASE_URL:-http://iopaint-diffusion:8082}
+      IOPAINT_PROMPT_HEALTH_PATH: ${IOPAINT_PROMPT_HEALTH_PATH:-/docs}
+      IOPAINT_PROMPT_INPAINT_PATH: ${IOPAINT_PROMPT_INPAINT_PATH:-/api/v1/inpaint}
+      IOPAINT_PROMPT_TIMEOUT_SECONDS: ${IOPAINT_PROMPT_TIMEOUT_SECONDS:-300}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-0}
+      TASK_QUEUE_ENABLED: ${TASK_QUEUE_ENABLED:-true}
     ports:
       - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
       interval: 10s
       timeout: 5s
       retries: 6
       start_period: 10s
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["sh", "-c", "celery -A img_cleaner_backend.celery_app:celery_app worker --loglevel=INFO --concurrency=$${CELERY_WORKER_CONCURRENCY:-1}"]
+    environment:
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+      IOPAINT_BASE_URL: ${IOPAINT_BASE_URL:-http://iopaint:8081}
+      IOPAINT_HEALTH_PATH: ${IOPAINT_HEALTH_PATH:-/docs}
+      IOPAINT_INPAINT_PATH: ${IOPAINT_INPAINT_PATH:-/api/v1/inpaint}
+      IOPAINT_SEGMENT_PATH: ${IOPAINT_SEGMENT_PATH:-/api/v1/run_plugin_gen_mask}
+      IOPAINT_SEGMENT_PLUGIN_NAME: ${IOPAINT_SEGMENT_PLUGIN_NAME:-InteractiveSeg}
+      IOPAINT_TIMEOUT_SECONDS: ${IOPAINT_TIMEOUT_SECONDS:-120}
+      IOPAINT_PROMPT_BASE_URL: ${IOPAINT_PROMPT_BASE_URL:-http://iopaint-diffusion:8082}
+      IOPAINT_PROMPT_HEALTH_PATH: ${IOPAINT_PROMPT_HEALTH_PATH:-/docs}
+      IOPAINT_PROMPT_INPAINT_PATH: ${IOPAINT_PROMPT_INPAINT_PATH:-/api/v1/inpaint}
+      IOPAINT_PROMPT_TIMEOUT_SECONDS: ${IOPAINT_PROMPT_TIMEOUT_SECONDS:-300}
+    depends_on:
+      redis:
+        condition: service_healthy
 
   frontend:
     build:
@@ -46,6 +93,32 @@ services:
       timeout: 5s
       retries: 12
       start_period: 60s
+
+  iopaint-diffusion:
+    build:
+      context: .
+      dockerfile: docker/iopaint/Dockerfile
+    profiles:
+      - diffusion
+    command:
+      - iopaint
+      - start
+      - --model=${IOPAINT_PROMPT_MODEL:-runwayml/stable-diffusion-inpainting}
+      - --device=cpu
+      - --low-mem
+      - --host=0.0.0.0
+      - --port=8082
+      - --model-dir=/models
+    ports:
+      - "8082:8082"
+    volumes:
+      - iopaint-models:/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8082/docs', timeout=3)"]
+      interval: 20s
+      timeout: 5s
+      retries: 12
+      start_period: 120s
 
 volumes:
   iopaint-models:

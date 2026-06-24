@@ -7,6 +7,10 @@ export function firstImageFile(files: FileCollection): File | null {
   return null;
 }
 
+export function imageFiles(files: FileCollection): File[] {
+  return toFiles(files).filter((file) => file.type.startsWith("image/"));
+}
+
 export function hasDraggedFiles(types: Iterable<string> | ArrayLike<string>): boolean {
   for (const type of toArray(types)) {
     if (type === "Files") return true;

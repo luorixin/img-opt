@@ -23,3 +23,9 @@ The current history has no detailed convention beyond `first commit`. Use short 
 
 ## Security & Configuration Tips
 Do not commit `.env`, virtual environments, `node_modules/`, `dist/`, caches, or model data. Keep IOPaint endpoint settings configurable through environment variables such as `IOPAINT_BASE_URL`, `IOPAINT_INPAINT_PATH`, and `IOPAINT_TIMEOUT_SECONDS`.
+
+不要自动构建Docker镜像。
+
+需求完成写好更新文档，包括新增功能、修复问题、性能优化等。放入 `docs/` 目录。
+
+代码需要有详细的中文注释，包括函数、类、模块等。

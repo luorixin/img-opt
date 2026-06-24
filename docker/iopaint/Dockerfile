@@ -8,4 +8,4 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 EXPOSE 8081
 
-CMD ["iopaint", "start", "--model=lama", "--device=cpu", "--host=0.0.0.0", "--port=8081", "--model-dir=/models"]
+CMD ["iopaint", "start", "--model=lama", "--device=cpu", "--enable-interactive-seg", "--interactive-seg-model=mobile_sam", "--interactive-seg-device=cpu", "--host=0.0.0.0", "--port=8081", "--model-dir=/models"]
