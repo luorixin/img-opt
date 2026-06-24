@@ -594,41 +594,55 @@ export default function App() {
       />
 
       <section className="workspace" aria-label="编辑区">
-        <div className="canvasStage">
-          {image ? (
-            <div
-              className="canvasStack"
-              style={{
-                aspectRatio: `${image.width} / ${image.height}`,
-                transform: `translate3d(${panX}px, ${panY}px, 0) scale(${zoom})`,
-                transformOrigin: "center",
-                transition: isPanning ? "none" : "transform 0.08s ease-out",
-              }}
-            >
-              <canvas ref={baseCanvasRef} className="paintCanvas" />
-              <canvas
-                ref={overlayCanvasRef}
-                className="maskCanvas"
+        <div className="workspacePanel">
+          <h2 className="panelTitle">Original</h2>
+          <div className="canvasStage sketch-box">
+            {image ? (
+              <div
+                className="canvasStack"
                 style={{
-                  cursor: isPanning ? "grabbing" : spacePressed ? "grab" : "crosshair",
+                  aspectRatio: `${image.width} / ${image.height}`,
+                  transform: `translate3d(${panX}px, ${panY}px, 0) scale(${zoom})`,
+                  transformOrigin: "center",
+                  transition: isPanning ? "none" : "transform 0.08s ease-out",
                 }}
-                {...pointerEvents}
-              />
-            </div>
-          ) : (
-            <label className="emptyDrop">
-              <ImagePlus size={34} />
-              <span>选择图片</span>
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                onChange={(event) => handleFileInput(event.target.files)}
-              />
-            </label>
-          )}
+              >
+                <canvas ref={baseCanvasRef} className="paintCanvas" />
+                <canvas
+                  ref={overlayCanvasRef}
+                  className="maskCanvas"
+                  style={{
+                    cursor: isPanning ? "grabbing" : spacePressed ? "grab" : "crosshair",
+                  }}
+                  {...pointerEvents}
+                />
+              </div>
+            ) : (
+              <label className="emptyDrop">
+                <ImagePlus size={34} />
+                <span>选择图片</span>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(event) => handleFileInput(event.target.files)}
+                />
+              </label>
+            )}
+          </div>
         </div>
 
-        <ResultPane resultUrl={resultUrl} />
+        <div className="workspaceDivider">
+          <button className="dividerBtn sketch-box" onClick={resetZoomPan} title="重置视图">
+            &lt; &gt;
+          </button>
+        </div>
+
+        <div className="workspacePanel">
+          <h2 className="panelTitle">Result</h2>
+          <div className="resultStage sketch-box">
+            <ResultPane resultUrl={resultUrl} />
+          </div>
+        </div>
       </section>
 
       <Modal

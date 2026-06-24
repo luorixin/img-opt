@@ -326,6 +326,12 @@ export function useCanvasDrawing() {
       return;
     }
 
+    if (currentTool === "smart") {
+      useStore.getState().setSmartSegmentPoint(point);
+      useStore.getState().setSmartSegmentRequestId(useStore.getState().smartSegmentRequestId + 1);
+      return;
+    }
+
     pushHistory();
 
     if (currentTool === "rectangle") {
@@ -373,6 +379,10 @@ export function useCanvasDrawing() {
     if (currentTool === "crop") {
       const start = rectStartRef.current;
       if (start) setCropPreview({ start, end: point });
+      return;
+    }
+
+    if (currentTool === "smart") {
       return;
     }
 
