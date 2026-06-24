@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ImagePlus } from "lucide-react";
 
 import { inpaintImage, promptInpaintImage, segmentImageMask } from "./api/api";
@@ -9,9 +9,12 @@ import {
   loadImage,
   maskToPngBlob,
   pngBlobToMaskData,
+  downscaleImageFile,
 } from "./utils/canvasExport";
 import { ResultPane } from "./components/ResultPane";
 import { Toolbar } from "./components/Toolbar";
+import { Modal } from "./components/Modal";
+import { Progress } from "./components/Progress";
 import {
   buildCropFilename,
   calculateCropOutputSize,
@@ -66,6 +69,9 @@ export default function App() {
   const redoStack = useStore((state) => state.redoStack);
   const smartSegmentPoint = useStore((state) => state.smartSegmentPoint);
   const smartSegmentRequestId = useStore((state) => state.smartSegmentRequestId);
+  const batchProgress = useStore((state) => state.batchProgress);
+
+  const [pendingLargeImage, setPendingLargeImage] = useState<{ file: File; width: number; height: number } | null>(null);
 
   // Zoom & Pan
   const zoom = useStore((state) => state.zoom);
@@ -92,6 +98,7 @@ export default function App() {
   const setResultUrl = useStore((state) => state.setResultUrl);
   const setResultFilename = useStore((state) => state.setResultFilename);
   const resetZoomPan = useStore((state) => state.resetZoomPan);
+  const setBatchProgress = useStore((state) => state.setBatchProgress);
 
   // Load persistent state from IndexedDB when app mounts
   useEffect(() => {
@@ -170,10 +177,9 @@ export default function App() {
 
         const currentMask = useStore.getState().mask;
         if (!currentMask) return;
-        useStore.getState().pushHistory();
+        useStore.getState().pushSmartSegmentHistory();
         useStore.setState((state) => ({
           mask: mergeMasks(currentMask, generatedMask),
-          redoStack: [],
           historyTick: state.historyTick + 1,
           status: "智能选区已添加，可继续点击或用橡皮擦修整",
         }));
@@ -200,20 +206,14 @@ export default function App() {
     smartSegmentRequestId,
   ]);
 
-  async function handleImageUpload(file: File | null) {
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      setStatus("请选择图片文件");
-      return;
-    }
-
+  async function performImageUpload(file: File) {
     const url = URL.createObjectURL(file);
     try {
       const loaded = await loadImage(url);
 
       // Clean up previous URLs
-      if (image?.url) URL.revokeObjectURL(image.url);
-      if (resultUrl) URL.revokeObjectURL(resultUrl);
+      if (useStore.getState().image?.url) URL.revokeObjectURL(useStore.getState().image!.url);
+      if (useStore.getState().resultUrl) URL.revokeObjectURL(useStore.getState().resultUrl!);
 
       useStore.setState({
         image: {
@@ -225,6 +225,8 @@ export default function App() {
         mask: createBlankMask(loaded.naturalWidth, loaded.naturalHeight),
         historyStack: [],
         redoStack: [],
+        segmentStack: [],
+        segmentRedoStack: [],
         resultUrl: null,
         resultFilename: "cleaned.png",
         previewRect: null,
@@ -241,6 +243,52 @@ export default function App() {
       console.error(err);
       setStatus("加载图片失败");
     }
+  }
+
+  async function handleImageUpload(file: File | null) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setStatus("请选择图片文件");
+      return;
+    }
+
+    const url = URL.createObjectURL(file);
+    try {
+      const loaded = await loadImage(url);
+      const MAX_DIMENSION = 2048;
+
+      if (loaded.naturalWidth > MAX_DIMENSION || loaded.naturalHeight > MAX_DIMENSION) {
+        setPendingLargeImage({ file, width: loaded.naturalWidth, height: loaded.naturalHeight });
+        URL.revokeObjectURL(url);
+        return;
+      }
+
+      URL.revokeObjectURL(url);
+      await performImageUpload(file);
+    } catch (err) {
+      console.error(err);
+      setStatus("加载图片失败");
+    }
+  }
+
+  async function acceptDownscale() {
+    if (!pendingLargeImage) return;
+    setBusy(true);
+    try {
+      const downscaled = await downscaleImageFile(pendingLargeImage.file, 2048);
+      await performImageUpload(downscaled);
+    } catch (err) {
+      setStatus("降采样失败");
+    } finally {
+      setBusy(false);
+      setPendingLargeImage(null);
+    }
+  }
+
+  async function acceptOriginal() {
+    if (!pendingLargeImage) return;
+    await performImageUpload(pendingLargeImage.file);
+    setPendingLargeImage(null);
   }
 
   // Ref helper for pasting handler to capture latest context
@@ -432,6 +480,7 @@ export default function App() {
         ({ current, total, filename }) => {
           const label = operation === "transparent" ? "透明" : "清晰";
           setStatus(`批量${label}处理中，${current} / ${total}：${filename}`);
+          setBatchProgress({ current, total, filename, operation: label });
         },
       );
 
@@ -450,6 +499,7 @@ export default function App() {
       setStatus(error instanceof Error ? error.message : "批量处理失败");
     } finally {
       setBusy(false);
+      setBatchProgress(null);
     }
   }
 
@@ -580,6 +630,39 @@ export default function App() {
 
         <ResultPane resultUrl={resultUrl} />
       </section>
+
+      <Modal
+        isOpen={pendingLargeImage !== null}
+        title="图片分辨率过大"
+        footer={
+          <>
+            <button className="secondaryButton" onClick={() => setPendingLargeImage(null)}>取消</button>
+            <button className="secondaryButton" onClick={() => void acceptOriginal()}>原图继续 (可能崩溃)</button>
+            <button className="primaryButton" onClick={() => void acceptDownscale()}>自动缩小 (推荐)</button>
+          </>
+        }
+      >
+        <p>
+          当前图片尺寸为 <strong>{pendingLargeImage?.width} × {pendingLargeImage?.height}</strong>。
+        </p>
+        <p>
+          过大的分辨率在进行 AI 处理时，极易导致系统显存或内存不足 (OOM) 并引发崩溃。
+          建议自动等比例缩放至长边 2048px 以下进行安全处理。
+        </p>
+      </Modal>
+
+      <Modal
+        isOpen={batchProgress !== null}
+        title="批量处理中"
+      >
+        {batchProgress && (
+          <Progress
+            current={batchProgress.current}
+            total={batchProgress.total}
+            label={`正在生成${batchProgress.operation}：${batchProgress.filename}`}
+          />
+        )}
+      </Modal>
     </main>
   );
 }

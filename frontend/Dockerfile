@@ -10,6 +10,7 @@ RUN npm ci
 
 COPY frontend/index.html frontend/tsconfig.json frontend/tsconfig.node.json frontend/vite.config.ts ./
 COPY frontend/src ./src
+COPY frontend/public ./public
 RUN npm run build
 
 FROM nginx:1.29-alpine

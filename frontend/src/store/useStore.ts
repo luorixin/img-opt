@@ -11,6 +11,13 @@ import type { CropRect } from "../utils/crop";
 import { type MaskData, type Point, cloneMask, createBlankMask } from "../utils/mask";
 import { saveAppState } from "../utils/db";
 
+export type BatchProgress = {
+  current: number;
+  total: number;
+  filename: string;
+  operation: string;
+} | null;
+
 export type ImageState = {
   file: File;
   url: string;
@@ -58,6 +65,11 @@ interface AppState {
   mask: MaskData | null;
   historyStack: MaskData[]; // 撤销栈
   redoStack: MaskData[]; // 重做栈
+  segmentStack: MaskData[]; // 智能选区专属临时撤销栈
+  segmentRedoStack: MaskData[]; // 智能选区专属临时重做栈
+
+  // 批量处理进度
+  batchProgress: BatchProgress;
 
   // === 操作动作 (Actions) ===
   setImage: (image: ImageState | null) => void;
@@ -90,6 +102,7 @@ interface AppState {
   // 蒙版像素及历史队列修改
   setMask: (mask: MaskData | null) => void;
   pushHistory: () => void;
+  pushSmartSegmentHistory: () => void;
   undo: () => void;
   redo: () => void;
   clearMask: () => void;
@@ -97,6 +110,8 @@ interface AppState {
   
   // 端侧 IndexedDB 持久化触发接口
   persistToDB: () => void;
+
+  setBatchProgress: (progress: BatchProgress) => void;
 }
 
 const MAX_HISTORY = 40;
@@ -133,13 +148,17 @@ export const useStore = create<AppState>((set, get) => ({
   mask: null,
   historyStack: [],
   redoStack: [],
+  segmentStack: [],
+  segmentRedoStack: [],
+
+  batchProgress: null,
 
   // === 动作行为 ===
   setImage: (image) => {
     set({ image });
     get().persistToDB();
   },
-  setTool: (tool) => set({ tool }),
+  setTool: (tool) => set({ tool, segmentStack: [], segmentRedoStack: [] }),
   setBrushSize: (brushSize) => {
     set({ brushSize });
     get().persistToDB();
@@ -192,9 +211,31 @@ export const useStore = create<AppState>((set, get) => ({
       historyStack: [...historyStack.slice(-(MAX_HISTORY - 1)), cloneMask(mask)],
     });
   },
+  pushSmartSegmentHistory: () => {
+    const { mask, segmentStack } = get();
+    if (!mask) return;
+    set({
+      segmentStack: [...segmentStack, cloneMask(mask)],
+      segmentRedoStack: [],
+    });
+  },
   undo: () => {
-    const { mask, historyStack, redoStack } = get();
-    if (!mask || historyStack.length === 0) return;
+    const { tool, mask, historyStack, redoStack, segmentStack, segmentRedoStack } = get();
+    if (!mask) return;
+
+    if (tool === "smart" && segmentStack.length > 0) {
+      const previous = segmentStack[segmentStack.length - 1];
+      set((state) => ({
+        mask: previous,
+        segmentStack: segmentStack.slice(0, -1),
+        segmentRedoStack: [...segmentRedoStack, cloneMask(mask)],
+        historyTick: state.historyTick + 1,
+      }));
+      get().persistToDB();
+      return;
+    }
+
+    if (historyStack.length === 0) return;
     const previous = historyStack[historyStack.length - 1];
     const nextHistory = historyStack.slice(0, -1);
     const nextRedo = [...redoStack, cloneMask(mask)];
@@ -207,8 +248,22 @@ export const useStore = create<AppState>((set, get) => ({
     get().persistToDB();
   },
   redo: () => {
-    const { mask, historyStack, redoStack } = get();
-    if (!mask || redoStack.length === 0) return;
+    const { tool, mask, historyStack, redoStack, segmentStack, segmentRedoStack } = get();
+    if (!mask) return;
+
+    if (tool === "smart" && segmentRedoStack.length > 0) {
+      const next = segmentRedoStack[segmentRedoStack.length - 1];
+      set((state) => ({
+        mask: next,
+        segmentRedoStack: segmentRedoStack.slice(0, -1),
+        segmentStack: [...segmentStack, cloneMask(mask)],
+        historyTick: state.historyTick + 1,
+      }));
+      get().persistToDB();
+      return;
+    }
+
+    if (redoStack.length === 0) return;
     const next = redoStack[redoStack.length - 1];
     const nextRedo = redoStack.slice(0, -1);
     const nextHistory = [...historyStack, cloneMask(mask)];
@@ -253,5 +308,7 @@ export const useStore = create<AppState>((set, get) => ({
         }
       ).catch((err) => console.error("工作区状态同步至 IndexedDB 异常:", err));
     }
-  }
+  },
+
+  setBatchProgress: (batchProgress) => set({ batchProgress }),
 }));

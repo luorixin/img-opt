@@ -115,21 +115,17 @@ class IOPaintSidecarEngine(InpaintEngine):
         mask_dilate: int,
         mask_blur: int,
     ) -> bytes:
-        files = {
-            "image": ("image.png", image_bytes, "image/png"),
-            "mask": ("mask.png", mask_bytes, "image/png"),
-        }
-        data = {
-            "mask_dilate": str(mask_dilate),
-            "mask_blur": str(mask_blur),
+        import base64
+        payload = {
+            "image": base64.b64encode(image_bytes).decode("ascii"),
+            "mask": base64.b64encode(mask_bytes).decode("ascii"),
         }
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as client:
                 response = await client.post(
                     self.url_for(self.inpaint_path),
-                    files=files,
-                    data=data,
+                    json=payload,
                 )
         except httpx.HTTPError as exc:
             raise EngineUnavailable(f"{self.url_for(self.inpaint_path)} request failed: {exc}") from exc

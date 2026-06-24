@@ -365,3 +365,103 @@ a {
     grid-column: 1;
   }
 }
+
+/* Modal Styles */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(12, 13, 18, 0.4);
+  backdrop-filter: blur(4px);
+}
+
+.modalContent {
+  width: min(90%, 420px);
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  animation: modalFadeIn 0.2s ease-out;
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modalHeader {
+  padding: 16px 24px;
+  border-bottom: 1px solid #eef3f1;
+}
+
+.modalHeader h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #1d252c;
+}
+
+.modalBody {
+  padding: 24px;
+  color: #526167;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  background: #fbfcfb;
+  border-top: 1px solid #eef3f1;
+}
+
+/* Progress Styles */
+.progressContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.progressInfo {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  color: #435057;
+}
+
+.progressLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progressPercentage {
+  font-weight: bold;
+  color: #11835f;
+}
+
+.progressBarTrack {
+  height: 8px;
+  background: #eef3f1;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progressBarFill {
+  height: 100%;
+  background: #11835f;
+  border-radius: 4px;
+  transition: width 0.3s ease-out;
+}
+

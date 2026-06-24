@@ -22,6 +22,56 @@ export type BatchImageDependencies = {
   revokeObjectURL?: (url: string) => void;
 };
 
+export class AsyncQueue {
+  private readonly concurrency: number;
+  private running = 0;
+  private queue: Array<() => void> = [];
+
+  constructor(concurrency: number) {
+    if (!Number.isInteger(concurrency) || concurrency <= 0) {
+      throw new Error("concurrency must be a positive integer");
+    }
+
+    this.concurrency = concurrency;
+  }
+
+  add<T>(task: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const run = async () => {
+        this.running += 1;
+
+        try {
+          const result = await task();
+          resolve(result);
+        } catch (error) {
+          reject(error);
+        } finally {
+          this.running -= 1;
+          this.next();
+        }
+      };
+
+      this.queue.push(run);
+      this.next();
+    });
+  }
+
+  private next(): void {
+    while (this.running < this.concurrency && this.queue.length > 0) {
+      const run = this.queue.shift();
+      run?.();
+    }
+  }
+
+  get pending(): number {
+    return this.queue.length;
+  }
+
+  get active(): number {
+    return this.running;
+  }
+}
+
 export async function processBatchImages(
   files: File[],
   operation: BatchImageOperation,
@@ -29,31 +79,35 @@ export async function processBatchImages(
   onProgress?: (progress: BatchImageProgress) => void,
   dependencies: BatchImageDependencies = {},
 ): Promise<BatchImageResult[]> {
-  const results: BatchImageResult[] = [];
   const total = files.length;
   const imageLoader = dependencies.loadImage ?? loadImage;
   const createObjectURL = dependencies.createObjectURL ?? URL.createObjectURL.bind(URL);
   const revokeObjectURL = dependencies.revokeObjectURL ?? URL.revokeObjectURL.bind(URL);
 
-  for (let index = 0; index < files.length; index += 1) {
-    const file = files[index];
-    onProgress?.({ current: index + 1, total, filename: file.name });
-    const objectUrl = createObjectURL(file);
+  let startedCount = 0;
+  const queue = new AsyncQueue(3);
 
-    try {
-      const image = await imageLoader(objectUrl);
-      const blob = await processor(image, file);
-      results.push({
-        blob,
-        filename: buildBatchFilename(file.name, operation),
-        sourceName: file.name,
-      });
-    } finally {
-      revokeObjectURL(objectUrl);
-    }
-  }
+  const tasks = files.map((file) => {
+    return queue.add(async () => {
+      startedCount += 1;
+      onProgress?.({ current: startedCount, total, filename: file.name });
+      
+      const objectUrl = createObjectURL(file);
+      try {
+        const image = await imageLoader(objectUrl);
+        const blob = await processor(image, file);
+        return {
+          blob,
+          filename: buildBatchFilename(file.name, operation),
+          sourceName: file.name,
+        };
+      } finally {
+        revokeObjectURL(objectUrl);
+      }
+    });
+  });
 
-  return results;
+  return Promise.all(tasks);
 }
 
 export function buildBatchFilename(sourceName: string, operation: BatchImageOperation): string {

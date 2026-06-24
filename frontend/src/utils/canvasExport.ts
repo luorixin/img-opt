@@ -12,6 +12,43 @@ export function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
+export async function downscaleImageFile(file: File, maxDimension: number): Promise<File> {
+  const url = URL.createObjectURL(file);
+  try {
+    const image = await loadImage(url);
+    if (image.naturalWidth <= maxDimension && image.naturalHeight <= maxDimension) {
+      return file;
+    }
+
+    const scale = Math.min(maxDimension / image.naturalWidth, maxDimension / image.naturalHeight);
+    const width = Math.round(image.naturalWidth * scale);
+    const height = Math.round(image.naturalHeight * scale);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("无法创建降采样画布");
+
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(image, 0, 0, width, height);
+
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) {
+          // 保持原有文件名和类型
+          resolve(new File([blob], file.name, { type: file.type || "image/png" }));
+        } else {
+          reject(new Error("图片降采样失败"));
+        }
+      }, file.type || "image/png", 0.95);
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 export function maskToPngBlob(mask: MaskData): Promise<Blob> {
   const canvas = document.createElement("canvas");
   canvas.width = mask.width;
