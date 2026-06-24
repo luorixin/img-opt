@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from img_cleaner_backend.app import create_app
+from img_cleaner_backend.task_queue import CeleryTaskQueue
 
 
 def png_bytes(size=(8, 8), color=(255, 255, 255, 255)):
@@ -32,6 +33,7 @@ class FakeTaskQueue:
         self.calls = []
         self.statuses = {}
         self.results = {}
+        self.cancelled = []
 
     def enqueue_inpaint(self, image_bytes, mask_bytes, mask_dilate, mask_blur):
         self.calls.append(
@@ -73,6 +75,10 @@ class FakeTaskQueue:
 
     def get_result(self, task_id):
         return self.results.get(task_id)
+
+    def cancel(self, task_id):
+        self.cancelled.append(task_id)
+        return True
 
 
 def test_inpaint_enqueues_task_when_queue_is_enabled():
@@ -157,3 +163,139 @@ def test_prompt_inpaint_enqueues_diffusion_task():
     assert response.json()["task_id"] == "task-prompt-1"
     assert queue.calls[0]["operation"] == "prompt_inpaint"
     assert queue.calls[0]["prompt"] == "replace with a cat"
+
+
+def test_task_cancel_revokes_queued_work():
+    queue = FakeTaskQueue()
+    client = TestClient(create_app(FakeEngine(), task_queue=queue))
+
+    response = client.post("/api/tasks/task-1/cancel")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "task_id": "task-1",
+        "status": "cancelled",
+    }
+    assert queue.cancelled == ["task-1"]
+
+
+def test_celery_queue_stores_large_payloads_as_files(tmp_path):
+    class FakeStorage:
+        def __init__(self):
+            self.deleted = []
+
+        def create_input(self, image_bytes, mask_bytes, input_id=None):
+            assert image_bytes == b"image-bytes"
+            assert mask_bytes == b"mask-bytes"
+
+            class StoredInput:
+                pass
+
+            stored = StoredInput()
+            stored.input_id = input_id
+            return stored
+
+        def delete_input(self, input_id):
+            self.deleted.append(input_id)
+
+    class FakeTask:
+        def __init__(self):
+            self.calls = []
+
+        def apply_async(self, args, task_id):
+            self.calls.append((tuple(args), task_id))
+
+            class Result:
+                id = task_id
+
+            return Result()
+
+    storage = FakeStorage()
+    queue = object.__new__(CeleryTaskQueue)
+    queue.storage = storage
+    queue.inpaint_task = FakeTask()
+
+    task_id = CeleryTaskQueue.enqueue_inpaint(queue, b"image-bytes", b"mask-bytes", 3, 2)
+
+    assert task_id
+    assert queue.inpaint_task.calls == [((task_id, 3, 2), task_id)]
+    assert storage.deleted == []
+
+
+def test_celery_queue_refuses_to_cancel_unknown_pending_task():
+    """Celery 的 PENDING 也表示未知任务，不能无条件返回取消成功。"""
+
+    class FakeResult:
+        state = "PENDING"
+
+    class FakeControl:
+        def __init__(self):
+            self.calls = []
+
+        def revoke(self, *args, **kwargs):
+            self.calls.append((args, kwargs))
+
+    class FakeCelery:
+        def __init__(self):
+            self.control = FakeControl()
+
+        def AsyncResult(self, task_id):
+            return FakeResult()
+
+    class FakeStorage:
+        def input_exists(self, task_id):
+            return False
+
+        def is_cancelled(self, task_id):
+            return False
+
+    queue = object.__new__(CeleryTaskQueue)
+    queue.celery_app = FakeCelery()
+    queue.storage = FakeStorage()
+
+    assert queue.cancel("missing-task") is False
+    assert queue.celery_app.control.calls == []
+
+
+def test_celery_queue_persists_cancelled_status_for_known_task():
+    """已知任务取消后应立即返回 REVOKED，而不是等待 Worker 回写状态。"""
+
+    class FakeResult:
+        state = "PENDING"
+        info = None
+        result = None
+
+    class FakeControl:
+        def revoke(self, task_id, terminate):
+            assert task_id == "task-1"
+            assert terminate is False
+
+    class FakeCelery:
+        control = FakeControl()
+
+        def AsyncResult(self, task_id):
+            return FakeResult()
+
+    class FakeStorage:
+        cancelled = False
+        deleted = []
+
+        def input_exists(self, task_id):
+            return task_id == "task-1"
+
+        def is_cancelled(self, task_id):
+            return self.cancelled
+
+        def mark_cancelled(self, task_id):
+            self.cancelled = True
+
+        def delete_input(self, task_id):
+            self.deleted.append(task_id)
+
+    queue = object.__new__(CeleryTaskQueue)
+    queue.celery_app = FakeCelery()
+    queue.storage = FakeStorage()
+
+    assert queue.cancel("task-1") is True
+    assert queue.get_status("task-1")["status"] == "cancelled"
+    assert queue.storage.deleted == ["task-1"]

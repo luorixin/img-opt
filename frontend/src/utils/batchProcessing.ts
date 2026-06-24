@@ -107,7 +107,10 @@ export async function processBatchImages(
     });
   });
 
-  return Promise.all(tasks);
+  const settled = await Promise.allSettled(tasks);
+  const failure = settled.find((result): result is PromiseRejectedResult => result.status === "rejected");
+  if (failure) throw failure.reason;
+  return settled.map((result) => (result as PromiseFulfilledResult<BatchImageResult>).value);
 }
 
 export function buildBatchFilename(sourceName: string, operation: BatchImageOperation): string {

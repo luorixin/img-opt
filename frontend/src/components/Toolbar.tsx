@@ -1,3 +1,8 @@
+/**
+ * @module Toolbar
+ * @description 图像编辑器的工具选择、参数调节、任务操作与批量入口组件。
+ */
+
 import type { ReactNode } from "react";
 import {
   Brush,
@@ -16,6 +21,7 @@ import {
   SquareDashedMousePointer,
   Trash2,
   Undo2,
+  XCircle,
 } from "lucide-react";
 
 import type { Tool } from "../types/types";
@@ -28,6 +34,7 @@ type ToolbarProps = {
   maskBlur: number;
   backgroundTolerance: number;
   upscaleFactor: number;
+  algoMode: "fast" | "ai";
   prompt: string;
   canUndo: boolean;
   canRedo: boolean;
@@ -45,6 +52,7 @@ type ToolbarProps = {
   onMaskBlurChange: (value: number) => void;
   onBackgroundToleranceChange: (value: number) => void;
   onUpscaleFactorChange: (value: number) => void;
+  onAlgoModeChange: (mode: "fast" | "ai") => void;
   onPromptChange: (value: string) => void;
   onImageSelected: (file: File | null) => void;
   onUndo: () => void;
@@ -57,11 +65,15 @@ type ToolbarProps = {
   onEnhanceResolution: () => void;
   onCropAndDownload: () => void;
   onPromptInpaint: () => void;
+  canCancelTask: boolean;
+  onCancelTask: () => void;
   onBatchImagesSelected: (operation: BatchImageOperation, files: FileList | null) => void;
   zoom: number;
   onResetZoomPan: () => void;
+  onClearCache: () => void;
 };
 
+/** 渲染编辑工具栏与底部操作栏，所有业务动作由父组件注入。 */
 export function Toolbar({
   tool,
   brushSize,
@@ -69,6 +81,7 @@ export function Toolbar({
   maskBlur,
   backgroundTolerance,
   upscaleFactor,
+  algoMode,
   prompt,
   canUndo,
   canRedo,
@@ -86,6 +99,7 @@ export function Toolbar({
   onMaskBlurChange,
   onBackgroundToleranceChange,
   onUpscaleFactorChange,
+  onAlgoModeChange,
   onPromptChange,
   onImageSelected,
   onUndo,
@@ -98,15 +112,48 @@ export function Toolbar({
   onEnhanceResolution,
   onCropAndDownload,
   onPromptInpaint,
+  canCancelTask,
+  onCancelTask,
   onBatchImagesSelected,
   zoom,
   onResetZoomPan,
+  onClearCache,
 }: ToolbarProps) {
   return (
     <>
       <aside className="sidebar" aria-label="工具栏">
         <h2 className="sidebarTitle">📄 工具</h2>
         
+        <h3 className="sidebarSubtitle" style={{ fontSize: "14px", margin: "8px 0", opacity: 0.8 }}>⚙️ 算法模式</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "8px", marginBottom: "16px" }}>
+          <button
+            type="button"
+            className={`secondaryButton sketch-box ${algoMode === "fast" ? "active" : ""}`}
+            style={{
+              padding: "6px",
+              justifyContent: "center",
+              borderColor: algoMode === "fast" ? "#11835f" : undefined,
+              background: algoMode === "fast" ? "#eefbf6" : undefined,
+            }}
+            onClick={() => onAlgoModeChange("fast")}
+          >
+            <span>快速模式</span>
+          </button>
+          <button
+            type="button"
+            className={`secondaryButton sketch-box ${algoMode === "ai" ? "active" : ""}`}
+            style={{
+              padding: "6px",
+              justifyContent: "center",
+              borderColor: algoMode === "ai" ? "#11835f" : undefined,
+              background: algoMode === "ai" ? "#eefbf6" : undefined,
+            }}
+            onClick={() => onAlgoModeChange("ai")}
+          >
+            <span>AI 模式</span>
+          </button>
+        </div>
+
         <div className="segmented" role="group" aria-label="选择工具">
           <IconButton active={tool === "brush"} title="画笔" onClick={() => onToolChange("brush")}>
             <Brush size={18} />
@@ -201,6 +248,11 @@ export function Toolbar({
           <span>重置视图 ({Math.round(zoom * 100)}%)</span>
         </button>
 
+        <button className="secondaryButton sketch-box" onClick={onClearCache} title="如果遇到配额满或异常，可清除本地浏览器存储">
+          <Trash2 size={18} />
+          <span>清空本地存储</span>
+        </button>
+
         <div className="statusLine">
           <MousePointer2 size={16} />
           <span>{status}</span>
@@ -249,6 +301,11 @@ export function Toolbar({
           >
             <Sparkles size={18} />
             <span>重绘</span>
+          </button>
+
+          <button className="secondaryButton sketch-box" disabled={!canCancelTask} onClick={onCancelTask}>
+            <XCircle size={18} />
+            <span>取消任务</span>
           </button>
         </div>
 

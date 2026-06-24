@@ -9,7 +9,7 @@ import { create } from "zustand";
 import type { Tool } from "../types/types";
 import type { CropRect } from "../utils/crop";
 import { type MaskData, type Point, cloneMask, createBlankMask } from "../utils/mask";
-import { saveAppState } from "../utils/db";
+import { debouncedSaveAppState } from "../utils/db";
 
 export type BatchProgress = {
   current: number;
@@ -39,7 +39,9 @@ interface AppState {
   maskBlur: number; // 蒙版边缘羽化半径大小 (0 - 32)
   backgroundTolerance: number; // 背景消除颜色容差 (0 - 80)
   upscaleFactor: number; // 清晰度放大倍率 (2 - 4)
+  algoMode: "fast" | "ai"; // 算法模式: fast(端侧 Canvas 算法) | ai(后端 AI 算法)
   previewRect: PreviewRect; // 局部涂抹框选框临时数据
+
   cropRects: CropRect[]; // 已选的切图框选区域列表
   cropPreview: PreviewRect; // 切图选区拉伸预览临时数据
   resultUrl: string | null; // 处理完的图片 Object URL
@@ -79,7 +81,9 @@ interface AppState {
   setMaskBlur: (blur: number) => void;
   setBackgroundTolerance: (tolerance: number) => void;
   setUpscaleFactor: (factor: number) => void;
+  setAlgoMode: (mode: "fast" | "ai") => void;
   setPreviewRect: (rect: PreviewRect) => void;
+
   setCropRects: (rects: CropRect[]) => void;
   setCropPreview: (rect: PreviewRect) => void;
   setResultUrl: (url: string | null) => void;
@@ -125,7 +129,9 @@ export const useStore = create<AppState>((set, get) => ({
   maskBlur: 2,
   backgroundTolerance: 18,
   upscaleFactor: 2,
+  algoMode: "fast",
   previewRect: null,
+
   cropRects: [],
   cropPreview: null,
   resultUrl: null,
@@ -158,7 +164,10 @@ export const useStore = create<AppState>((set, get) => ({
     set({ image });
     get().persistToDB();
   },
-  setTool: (tool) => set({ tool, segmentStack: [], segmentRedoStack: [] }),
+  setTool: (tool) => {
+    set({ tool, segmentStack: [], segmentRedoStack: [] });
+    get().persistToDB();
+  },
   setBrushSize: (brushSize) => {
     set({ brushSize });
     get().persistToDB();
@@ -179,7 +188,12 @@ export const useStore = create<AppState>((set, get) => ({
     set({ upscaleFactor });
     get().persistToDB();
   },
+  setAlgoMode: (algoMode) => {
+    set({ algoMode });
+    get().persistToDB();
+  },
   setPreviewRect: (previewRect) => set({ previewRect }),
+
   setCropRects: (cropRects) => {
     set({ cropRects });
     get().persistToDB();
@@ -294,7 +308,7 @@ export const useStore = create<AppState>((set, get) => ({
   persistToDB: () => {
     const state = get();
     if (state.image) {
-      saveAppState(
+      debouncedSaveAppState(
         state.image.file,
         state.mask,
         state.cropRects,
@@ -304,9 +318,17 @@ export const useStore = create<AppState>((set, get) => ({
           maskBlur: state.maskBlur,
           backgroundTolerance: state.backgroundTolerance,
           upscaleFactor: state.upscaleFactor,
+          algoMode: state.algoMode,
           tool: state.tool,
+        },
+        (err) => {
+          if (err.message === "QUOTA_EXCEEDED") {
+            set({ status: "⚠️ 本地存储配额超限，请在工具栏清空缓存！" });
+          } else {
+            console.error("工作区状态同步至 IndexedDB 异常:", err);
+          }
         }
-      ).catch((err) => console.error("工作区状态同步至 IndexedDB 异常:", err));
+      );
     }
   },
 

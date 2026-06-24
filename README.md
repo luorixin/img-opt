@@ -52,7 +52,11 @@ IOPAINT_INPAINT_PATH=/api/v1/inpaint IOPAINT_SEGMENT_PATH=/api/v1/run_plugin_gen
 API_TOKEN=change-me RATE_LIMIT_PER_MINUTE=20 docker compose up -d --build
 ```
 
-如果开启了 `API_TOKEN`，前端构建时同步设置 `VITE_API_TOKEN`，或者由自己的网关注入鉴权请求头。Worker 默认 `CELERY_WORKER_CONCURRENCY=1`，用于降低多图并发时的显存/内存峰值；确认模型和机器容量足够后再调高。
+`VITE_API_TOKEN` 会进入浏览器产物，只适合本地或可信内网联调，不能作为公网秘密。公网部署应由网关或服务端会话完成鉴权。Worker 默认 `CELERY_WORKER_CONCURRENCY=1`，用于降低多图并发时的显存/内存峰值；确认模型和机器容量足够后再调高。
+
+异步任务默认把上传图片和 mask 写入共享任务目录，再把任务引用放入 Redis/Celery，避免大图二进制被 base64 塞进队列消息。Compose 中 `backend` 和 `worker` 共享 `task-data` volume；本地运行时可用 `TASK_STORAGE_DIR=/tmp/img-cleaner-tasks` 覆盖。结果、排队输入和活动租约分别由 `TASK_ARTIFACT_EXPIRES_SECONDS`、`TASK_INPUT_EXPIRES_SECONDS`、`TASK_ACTIVE_EXPIRES_SECONDS` 控制。
+
+公网部署建议设置 `MAX_UPLOAD_BYTES`、`MAX_IMAGE_PIXELS`、`MAX_OUTPUT_PIXELS` 和 `RATE_LIMIT_REDIS_URL`。前两类像素上限会在任务入队前拒绝压缩图片炸弹、越界裁剪和过大的超分输出。Real-ESRGAN 与 rembg 模型默认缓存到 `ai-models` volume；可通过 `UPSCALER_MODEL_PATH`、`UPSCALER_MODEL_URL`、`UPSCALER_MODEL_SHA256` 和 `UPSCALER_MODEL_DOWNLOAD_TIMEOUT_SECONDS` 覆盖下载配置。
 
 ## 本地开发启动
 

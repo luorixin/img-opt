@@ -8,8 +8,19 @@ from __future__ import annotations
 import os
 import secrets
 import time
+import hashlib
+from typing import Protocol
 
 from fastapi import HTTPException, Request
+
+
+class RateLimiter(Protocol):
+    """限流器协议，统一内存和 Redis 实现的调用方式。"""
+
+    limit_per_minute: int
+
+    def allow(self, key: str) -> bool:
+        raise NotImplementedError
 
 
 class FixedWindowRateLimiter:
@@ -62,7 +73,34 @@ class FixedWindowRateLimiter:
             del self._hits[key]
 
 
-def build_rate_limiter_from_env() -> FixedWindowRateLimiter:
+class RedisFixedWindowRateLimiter:
+    """使用 Redis 保存计数的固定窗口限流器。"""
+
+    def __init__(self, redis_url: str, limit_per_minute: int, redis_client=None):
+        """初始化限流器，并允许测试注入兼容 Redis 的客户端。"""
+        if redis_client is None:
+            import redis
+
+            redis_client = redis.Redis.from_url(redis_url)
+
+        self.limit_per_minute = limit_per_minute
+        self.redis = redis_client
+
+    def allow(self, key: str) -> bool:
+        """使用调用方标识的不可逆指纹计数，避免在 Redis 中暴露凭证。"""
+        if self.limit_per_minute <= 0:
+            return True
+
+        window = int(time.time() // 60)
+        key_fingerprint = hashlib.sha256(key.encode("utf-8")).hexdigest()
+        redis_key = f"rate-limit:{window}:{key_fingerprint}"
+        hits = self.redis.incr(redis_key)
+        if hits == 1:
+            self.redis.expire(redis_key, 120)
+        return hits <= self.limit_per_minute
+
+
+def build_rate_limiter_from_env() -> RateLimiter:
     """
     从环境变量初始化固定窗口限流器。
     读取 RATE_LIMIT_PER_MINUTE，默认值为 0（不限流）。
@@ -70,7 +108,11 @@ def build_rate_limiter_from_env() -> FixedWindowRateLimiter:
     返回:
         FixedWindowRateLimiter: 配置好的限流器实例。
     """
-    return FixedWindowRateLimiter(int(os.getenv("RATE_LIMIT_PER_MINUTE", "0")))
+    limit = int(os.getenv("RATE_LIMIT_PER_MINUTE", "0"))
+    redis_url = os.getenv("RATE_LIMIT_REDIS_URL", "").strip()
+    if redis_url:
+        return RedisFixedWindowRateLimiter(redis_url, limit)
+    return FixedWindowRateLimiter(limit)
 
 
 def require_api_token(request: Request) -> None:

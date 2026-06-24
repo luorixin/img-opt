@@ -13,6 +13,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from PIL import Image, UnidentifiedImageError
+from starlette.concurrency import run_in_threadpool
 
 from img_cleaner_backend.engines import (
     EngineUnavailable,
@@ -23,6 +24,11 @@ from img_cleaner_backend.engines import (
 )
 from img_cleaner_backend.security import build_rate_limiter_from_env, check_rate_limit, require_api_token
 from img_cleaner_backend.task_queue import TaskQueue, build_task_queue_from_env
+from img_cleaner_backend.image_validation import (
+    ImageValidationError,
+    validate_image_pixels,
+    validate_upscale_request,
+)
 
 SIDECAR_HINT = (
     "IOPaint sidecar is unavailable. Start it with: "
@@ -104,8 +110,8 @@ def create_app(
         如果启用了异步任务队列，则将任务入队并返回 202 状态码。
         否则，同步等待处理并直接返回修复后的图像。
         """
-        image_bytes = await image.read()
-        mask_bytes = await mask.read()
+        image_bytes = await _read_upload_with_limit(image)
+        mask_bytes = await _read_upload_with_limit(mask)
         image_size, normalized_image = _read_image(image_bytes)
         mask_size, normalized_mask = _read_image(mask_bytes)
 
@@ -181,8 +187,8 @@ def create_app(
         normalized_prompt = prompt.strip()
         if not normalized_prompt:
             raise HTTPException(status_code=400, detail="Prompt must not be blank.")
-        image_size, normalized_image = _read_image(await image.read())
-        mask_size, normalized_mask = _read_image(await mask.read())
+        image_size, normalized_image = _read_image(await _read_upload_with_limit(image))
+        mask_size, normalized_mask = _read_image(await _read_upload_with_limit(mask))
         if image_size != mask_size:
             raise HTTPException(
                 status_code=400,
@@ -261,7 +267,7 @@ def create_app(
         处理交互式分割（Segment）请求。
         基于指定的坐标点在图像上生成分割蒙版。
         """
-        image_size, normalized_image = _read_image(await image.read())
+        image_size, normalized_image = _read_image(await _read_upload_with_limit(image))
         width, height = image_size
         if x >= width or y >= height:
             raise HTTPException(
@@ -292,6 +298,95 @@ def create_app(
 
         return Response(content=result, media_type="image/png")
 
+    @app.post(
+        "/api/remove-background",
+        dependencies=[Depends(require_api_token), Depends(check_rate_limit)],
+    )
+    async def remove_background(
+        image: UploadFile = File(...),
+    ):
+        """
+        AI 背景分割 (去除背景) 接口。
+        """
+        image_bytes = await _read_upload_with_limit(image)
+        _, normalized_image = _read_image(image_bytes)
+        if app.state.task_queue.enabled:
+            task_id = app.state.task_queue.enqueue_remove_background(normalized_image)
+            return JSONResponse(
+                status_code=202,
+                content={
+                    "task_id": task_id,
+                    "status": "queued",
+                    "status_url": f"/api/tasks/{task_id}",
+                    "result_url": f"/api/tasks/{task_id}/result",
+                },
+            )
+
+        try:
+            from img_cleaner_backend.ai_engines import remove_background
+            result = await run_in_threadpool(remove_background, normalized_image)
+            return Response(content=result, media_type="image/png")
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "code": "REMOVE_BACKGROUND_ERROR",
+                    "message": str(exc),
+                },
+            )
+
+    @app.post(
+        "/api/upscale",
+        dependencies=[Depends(require_api_token), Depends(check_rate_limit)],
+    )
+    async def upscale(
+        image: UploadFile = File(...),
+        upscale_factor: int = Form(2, ge=2, le=4),
+        crop: str | None = Form(None),
+    ):
+        """
+        AI 超分和裁剪接口。
+        """
+        image_bytes = await _read_upload_with_limit(image)
+        image_size, normalized_image = _read_image(image_bytes)
+        try:
+            normalized_crop = validate_upscale_request(image_size, upscale_factor, crop)
+        except ImageValidationError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        if app.state.task_queue.enabled:
+            task_id = app.state.task_queue.enqueue_upscale(
+                normalized_image,
+                upscale_factor,
+                normalized_crop,
+            )
+            return JSONResponse(
+                status_code=202,
+                content={
+                    "task_id": task_id,
+                    "status": "queued",
+                    "status_url": f"/api/tasks/{task_id}",
+                    "result_url": f"/api/tasks/{task_id}/result",
+                },
+            )
+
+        try:
+            from img_cleaner_backend.ai_engines import run_upscale
+            result = await run_in_threadpool(
+                run_upscale,
+                normalized_image,
+                upscale_factor,
+                normalized_crop,
+            )
+            return Response(content=result, media_type="image/png")
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "code": "UPSCALE_ERROR",
+                    "message": str(exc),
+                },
+            )
+
     @app.get("/api/tasks/{task_id}/result", dependencies=[Depends(require_api_token)])
     async def task_result(task_id: str):
         """
@@ -316,7 +411,35 @@ def create_app(
             content={"task_id": task_id, "status": status.get("status", "pending")},
         )
 
+    @app.post("/api/tasks/{task_id}/cancel", dependencies=[Depends(require_api_token)])
+    async def task_cancel(task_id: str):
+        cancelled = app.state.task_queue.cancel(task_id)
+        if not cancelled:
+            raise HTTPException(status_code=404, detail="Task queue is disabled or task cannot be cancelled.")
+        return {"task_id": task_id, "status": "cancelled"}
+
     return app
+
+
+async def _read_upload_with_limit(upload: UploadFile) -> bytes:
+    max_upload_bytes = int(os.getenv("MAX_UPLOAD_BYTES", "0"))
+    if max_upload_bytes <= 0:
+        return await upload.read()
+
+    chunks = []
+    total = 0
+    while True:
+        chunk = await upload.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_upload_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail="Uploaded image or mask exceeds the configured size limit.",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _read_image(content: bytes) -> tuple[tuple[int, int], bytes]:
@@ -332,6 +455,13 @@ def _read_image(content: bytes) -> tuple[tuple[int, int], bytes]:
     """
     try:
         with Image.open(BytesIO(content)) as image:
+            try:
+                validate_image_pixels(*image.size)
+            except ImageValidationError as validation_error:
+                raise HTTPException(
+                    status_code=validation_error.status_code,
+                    detail=str(validation_error),
+                ) from validation_error
             normalized = image.convert("RGBA")
             output = BytesIO()
             normalized.save(output, format="PNG")

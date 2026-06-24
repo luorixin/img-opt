@@ -51,4 +51,48 @@ describe("batch processing helpers", () => {
     expect(results.map((result) => result.filename)).toEqual(["one-enhanced.png", "two-enhanced.png"]);
   });
 
+  it("waits for all started work before reporting a batch failure", async () => {
+    let releaseSlowTask: (() => void) | undefined;
+    let markFailureReached: (() => void) | undefined;
+    const slowTask = new Promise<void>((resolve) => {
+      releaseSlowTask = resolve;
+    });
+    const failureReached = new Promise<void>((resolve) => {
+      markFailureReached = resolve;
+    });
+    const files = [
+      new File(["a"], "failed.png", { type: "image/png" }),
+      new File(["b"], "slow.png", { type: "image/png" }),
+    ];
+    const operation = processBatchImages(
+      files,
+      "enhance",
+      async (_image, file) => {
+        if (file.name === "failed.png") {
+          markFailureReached?.();
+          throw new Error("failed item");
+        }
+        await slowTask;
+        return new Blob(["done"]);
+      },
+      undefined,
+      {
+        loadImage: async () => ({} as HTMLImageElement),
+        createObjectURL: (file) => `blob:${file.name}`,
+        revokeObjectURL: vi.fn(),
+      },
+    );
+    let settled = false;
+    void operation.catch(() => {
+      settled = true;
+    });
+
+    await failureReached;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+
+    releaseSlowTask?.();
+    await expect(operation).rejects.toThrow("failed item");
+  });
+
 });

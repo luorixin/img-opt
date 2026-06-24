@@ -312,3 +312,88 @@ def test_iopaint_segment_posts_plugin_json_payload():
         "image": base64.b64encode(b"image-png").decode("ascii"),
         "clicks": [[12, 34, 1]],
     }
+
+
+def test_remove_background_returns_png():
+    from unittest.mock import patch
+    with patch("img_cleaner_backend.ai_engines.remove_background") as mock_remove:
+        mock_remove.return_value = b"fake-no-bg-png"
+        client = TestClient(create_app(FakeEngine()))
+        response = client.post(
+            "/api/remove-background",
+            files={"image": upload_tuple("image.png", png_bytes())},
+        )
+        assert response.status_code == 200
+        assert response.content == b"fake-no-bg-png"
+        mock_remove.assert_called_once()
+
+
+def test_upscale_returns_png():
+    from unittest.mock import patch
+    with patch("img_cleaner_backend.ai_engines.run_upscale") as mock_run:
+        mock_run.return_value = b"fake-upscaled-png"
+        client = TestClient(create_app(FakeEngine()))
+        response = client.post(
+            "/api/upscale",
+            files={"image": upload_tuple("image.png", png_bytes())},
+            data={"upscale_factor": "3", "crop": "1,2,3,4"},
+        )
+        assert response.status_code == 200
+        assert response.content == b"fake-upscaled-png"
+        mock_run.assert_called_once_with(mock_run.call_args[0][0], 3, "1,2,3,4")
+
+
+def test_upscale_rejects_crop_outside_image_bounds():
+    """裁剪框必须完整位于原图内部，避免构造超大空白图导致内存耗尽。"""
+    from unittest.mock import patch
+
+    with patch("img_cleaner_backend.ai_engines.run_upscale", return_value=b"unused"):
+        client = TestClient(create_app(FakeEngine()))
+        response = client.post(
+            "/api/upscale",
+            files={"image": upload_tuple("image.png", png_bytes(size=(8, 8)))},
+            data={"upscale_factor": "2", "crop": "0,0,999999,999999"},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Crop rectangle must be inside the image."
+
+
+def test_upscale_rejects_output_over_pixel_limit(monkeypatch):
+    """限制放大后的总像素数，而不仅是上传文件的压缩字节数。"""
+    from unittest.mock import patch
+
+    monkeypatch.setenv("MAX_OUTPUT_PIXELS", "100")
+    with patch("img_cleaner_backend.ai_engines.run_upscale", return_value=b"unused"):
+        client = TestClient(create_app(FakeEngine()))
+        response = client.post(
+            "/api/upscale",
+            files={"image": upload_tuple("image.png", png_bytes(size=(8, 8)))},
+            data={"upscale_factor": "2"},
+        )
+
+    assert response.status_code == 413
+    assert response.json()["detail"] == "Requested output image exceeds the configured pixel limit."
+
+
+def test_remove_background_runs_sync_engine_in_threadpool(monkeypatch):
+    """队列关闭时也不能在异步路由中直接阻塞事件循环。"""
+    calls = []
+
+    async def fake_run_in_threadpool(function, *args):
+        calls.append((function, args))
+        return b"thread-result"
+
+    from unittest.mock import patch
+
+    monkeypatch.setattr("img_cleaner_backend.app.run_in_threadpool", fake_run_in_threadpool, raising=False)
+    with patch("img_cleaner_backend.ai_engines.remove_background", return_value=b"direct-result"):
+        client = TestClient(create_app(FakeEngine()))
+        response = client.post(
+            "/api/remove-background",
+            files={"image": upload_tuple("image.png", png_bytes(size=(8, 8)))},
+        )
+
+    assert response.status_code == 200
+    assert response.content == b"thread-result"
+    assert len(calls) == 1

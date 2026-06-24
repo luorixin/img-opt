@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import base64
 import os
+import uuid
 from typing import Protocol
+
+from img_cleaner_backend.task_storage import TaskFileStorage, build_task_file_storage_from_env
 
 
 class TaskQueue(Protocol):
@@ -37,10 +40,19 @@ class TaskQueue(Protocol):
     ) -> str:
         raise NotImplementedError
 
+    def enqueue_remove_background(self, image_bytes: bytes) -> str:
+        raise NotImplementedError
+
+    def enqueue_upscale(self, image_bytes: bytes, upscale_factor: int, crop: str | None) -> str:
+        raise NotImplementedError
+
     def get_status(self, task_id: str) -> dict:
         raise NotImplementedError
 
     def get_result(self, task_id: str) -> bytes | None:
+        raise NotImplementedError
+
+    def cancel(self, task_id: str) -> bool:
         raise NotImplementedError
 
 
@@ -73,11 +85,20 @@ class DisabledTaskQueue:
     ) -> str:
         raise RuntimeError("Task queue is disabled.")
 
+    def enqueue_remove_background(self, image_bytes: bytes) -> str:
+        raise RuntimeError("Task queue is disabled.")
+
+    def enqueue_upscale(self, image_bytes: bytes, upscale_factor: int, crop: str | None) -> str:
+        raise RuntimeError("Task queue is disabled.")
+
     def get_status(self, task_id: str) -> dict:
         return {"task_id": task_id, "state": "DISABLED", "status": "disabled"}
 
     def get_result(self, task_id: str) -> bytes | None:
         return None
+
+    def cancel(self, task_id: str) -> bool:
+        return False
 
 
 class CeleryTaskQueue:
@@ -87,13 +108,21 @@ class CeleryTaskQueue:
     """
     enabled = True
 
-    def __init__(self):
+    def __init__(self, storage: TaskFileStorage | None = None):
         from img_cleaner_backend.celery_app import celery_app
-        from img_cleaner_backend.tasks import inpaint_task, prompt_inpaint_task
+        from img_cleaner_backend.tasks import (
+            inpaint_task,
+            prompt_inpaint_task,
+            remove_background_task,
+            upscale_task,
+        )
 
         self.celery_app = celery_app
         self.inpaint_task = inpaint_task
         self.prompt_inpaint_task = prompt_inpaint_task
+        self.remove_background_task = remove_background_task
+        self.upscale_task = upscale_task
+        self.storage = storage or build_task_file_storage_from_env()
 
     def enqueue_inpaint(
         self,
@@ -102,13 +131,13 @@ class CeleryTaskQueue:
         mask_dilate: int,
         mask_blur: int,
     ) -> str:
-        task = self.inpaint_task.delay(
-            encode_bytes(image_bytes),
-            encode_bytes(mask_bytes),
+        return self._enqueue_with_files(
+            self.inpaint_task,
+            image_bytes,
+            mask_bytes,
             mask_dilate,
             mask_blur,
         )
-        return task.id
 
     def enqueue_prompt_inpaint(
         self,
@@ -121,9 +150,10 @@ class CeleryTaskQueue:
         guidance_scale: float,
         seed: int,
     ) -> str:
-        task = self.prompt_inpaint_task.delay(
-            encode_bytes(image_bytes),
-            encode_bytes(mask_bytes),
+        return self._enqueue_with_files(
+            self.prompt_inpaint_task,
+            image_bytes,
+            mask_bytes,
             prompt,
             negative_prompt,
             strength,
@@ -131,9 +161,34 @@ class CeleryTaskQueue:
             guidance_scale,
             seed,
         )
-        return task.id
+
+    def enqueue_remove_background(self, image_bytes: bytes) -> str:
+        return self._enqueue_with_files(self.remove_background_task, image_bytes, b"")
+
+    def enqueue_upscale(self, image_bytes: bytes, upscale_factor: int, crop: str | None) -> str:
+        return self._enqueue_with_files(
+            self.upscale_task,
+            image_bytes,
+            b"",
+            upscale_factor,
+            crop,
+        )
+
+    def _enqueue_with_files(self, task, image_bytes: bytes, mask_bytes: bytes, *arguments) -> str:
+        """使用同一个 ID 保存文件和提交 Celery，便于取消与垃圾回收定位。"""
+        task_id = uuid.uuid4().hex
+        self.storage.create_input(image_bytes, mask_bytes, input_id=task_id)
+        try:
+            result = task.apply_async(args=[task_id, *arguments], task_id=task_id)
+        except Exception:
+            self.storage.delete_input(task_id)
+            raise
+        return result.id
+
 
     def get_status(self, task_id: str) -> dict:
+        if self.storage.is_cancelled(task_id):
+            return {"task_id": task_id, "state": "REVOKED", "status": "cancelled"}
         result = self.celery_app.AsyncResult(task_id)
         state = result.state
         payload = {
@@ -141,6 +196,11 @@ class CeleryTaskQueue:
             "state": state,
             "status": celery_state_to_status(state),
         }
+        if isinstance(result.info, dict):
+            if "progress" in result.info:
+                payload["progress"] = result.info["progress"]
+            if "message" in result.info:
+                payload["message"] = result.info["message"]
         if state == "SUCCESS":
             payload["result_url"] = f"/api/tasks/{task_id}/result"
         elif state == "FAILURE":
@@ -148,13 +208,32 @@ class CeleryTaskQueue:
         return payload
 
     def get_result(self, task_id: str) -> bytes | None:
+        if self.storage.is_cancelled(task_id):
+            return None
         result = self.celery_app.AsyncResult(task_id)
         if result.state != "SUCCESS":
             return None
         payload = result.result
-        if not isinstance(payload, dict) or "image" not in payload:
+        if not isinstance(payload, dict):
+            raise RuntimeError("Task completed without an image result.")
+        if "image_path" in payload:
+            return self.storage.read_result(payload["image_path"])
+        if "image" not in payload:
             raise RuntimeError("Task completed without an image result.")
         return decode_bytes(payload["image"])
+
+    def cancel(self, task_id: str) -> bool:
+        result = self.celery_app.AsyncResult(task_id)
+        state = result.state
+        if self.storage.is_cancelled(task_id) or state in {"SUCCESS", "FAILURE", "REVOKED"}:
+            return False
+        if state == "PENDING" and not self.storage.input_exists(task_id):
+            return False
+
+        self.celery_app.control.revoke(task_id, terminate=state == "STARTED")
+        self.storage.mark_cancelled(task_id)
+        self.storage.delete_input(task_id)
+        return True
 
 
 def build_task_queue_from_env() -> TaskQueue:
@@ -198,4 +277,5 @@ def celery_state_to_status(state: str) -> str:
         "RETRY": "retrying",
         "SUCCESS": "completed",
         "FAILURE": "failed",
+        "REVOKED": "cancelled",
     }.get(state, state.lower())

@@ -1,9 +1,16 @@
+/**
+ * @module api
+ * @description 封装图像处理 HTTP 请求、异步任务轮询和任务取消协议。
+ */
+
 export type InpaintRequest = {
   image: File;
   mask: Blob;
   maskDilate: number;
   maskBlur: number;
   onProgress?: (message: string) => void;
+  onTaskSubmitted?: (taskId: string) => void;
+  onTaskSettled?: (taskId: string) => void;
 };
 
 export type InpaintOptions = {
@@ -28,7 +35,26 @@ export type PromptInpaintRequest = {
   guidanceScale?: number;
   seed?: number;
   onProgress?: (message: string) => void;
+  onTaskSubmitted?: (taskId: string) => void;
+  onTaskSettled?: (taskId: string) => void;
 };
+
+export type RemoveBackgroundRequest = {
+  image: File;
+  onProgress?: (message: string) => void;
+  onTaskSubmitted?: (taskId: string) => void;
+  onTaskSettled?: (taskId: string) => void;
+};
+
+export type UpscaleRequest = {
+  image: File;
+  upscaleFactor: number;
+  crop?: string;
+  onProgress?: (message: string) => void;
+  onTaskSubmitted?: (taskId: string) => void;
+  onTaskSettled?: (taskId: string) => void;
+};
+
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 const API_TOKEN = import.meta.env.VITE_API_TOKEN ?? "";
@@ -50,6 +76,7 @@ export async function inpaintImage(request: InpaintRequest, options: InpaintOpti
 
   if (response.status === 202) {
     const task = (await response.json()) as InpaintTaskSubmission;
+    request.onTaskSubmitted?.(task.task_id);
     request.onProgress?.("任务已入队");
     return pollInpaintTask(task, request, options);
   }
@@ -104,6 +131,7 @@ export async function promptInpaintImage(
 
   if (response.status === 202) {
     const task = (await response.json()) as InpaintTaskSubmission;
+    request.onTaskSubmitted?.(task.task_id);
     request.onProgress?.("重绘任务已入队");
     return pollInpaintTask(task, request, options);
   }
@@ -125,38 +153,55 @@ type InpaintTaskStatus = {
   task_id: string;
   state: string;
   status: string;
+  progress?: number;
+  message?: string;
   result_url?: string;
   error?: string;
 };
 
+export type CancelTaskResponse = {
+  task_id: string;
+  status: "cancelled";
+};
+
 async function pollInpaintTask(
   task: InpaintTaskSubmission,
-  request: { onProgress?: (message: string) => void },
+  request: {
+    onProgress?: (message: string) => void;
+    onTaskSettled?: (taskId: string) => void;
+  },
   options: InpaintOptions,
 ): Promise<Blob> {
   const pollIntervalMs = options.pollIntervalMs ?? 1000;
   const maxPolls = options.maxPolls ?? 240;
 
-  for (let attempt = 0; attempt < maxPolls; attempt += 1) {
-    await sleep(pollIntervalMs);
-    const response = await apiFetch(task.status_url);
-    if (!response.ok) {
-      const detail = await readErrorDetail(response);
-      throw new Error(detail || `Task status failed with HTTP ${response.status}`);
+  try {
+    for (let attempt = 0; attempt < maxPolls; attempt += 1) {
+      await sleep(pollIntervalMs);
+      const response = await apiFetch(task.status_url);
+      if (!response.ok) {
+        const detail = await readErrorDetail(response);
+        throw new Error(detail || `Task status failed with HTTP ${response.status}`);
+      }
+
+      const status = (await response.json()) as InpaintTaskStatus;
+      if (status.status === "completed") {
+        request.onProgress?.("任务完成，下载结果中");
+        return fetchTaskResult(status.result_url ?? task.result_url);
+      }
+      if (status.status === "failed") {
+        throw new Error(status.error || "修复任务失败");
+      }
+      if (status.status === "cancelled") {
+        throw new Error("任务已取消");
+      }
+      request.onProgress?.(formatTaskProgress(status));
     }
 
-    const status = (await response.json()) as InpaintTaskStatus;
-    if (status.status === "completed") {
-      request.onProgress?.("任务完成，下载结果中");
-      return fetchTaskResult(status.result_url ?? task.result_url);
-    }
-    if (status.status === "failed") {
-      throw new Error(status.error || "修复任务失败");
-    }
-    request.onProgress?.(`修复任务${formatTaskStatus(status.status)}`);
+    throw new Error("修复任务超时");
+  } finally {
+    request.onTaskSettled?.(task.task_id);
   }
-
-  throw new Error("修复任务超时");
 }
 
 async function fetchTaskResult(resultUrl: string): Promise<Blob> {
@@ -167,6 +212,73 @@ async function fetchTaskResult(resultUrl: string): Promise<Blob> {
   }
   return response.blob();
 }
+
+/** 请求后端取消指定任务；未知或已结束的任务由后端返回明确错误。 */
+export async function cancelInpaintTask(taskId: string): Promise<CancelTaskResponse> {
+  const response = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    const detail = await readErrorDetail(response);
+    throw new Error(detail || `Task cancellation failed with HTTP ${response.status}`);
+  }
+  return response.json() as Promise<CancelTaskResponse>;
+}
+
+/** 提交 AI 去背景请求；异步模式下自动轮询并报告任务生命周期。 */
+export async function removeBackground(request: RemoveBackgroundRequest, options: InpaintOptions = {}): Promise<Blob> {
+  const formData = new FormData();
+  formData.append("image", request.image);
+
+  const response = await apiFetch("/api/remove-background", {
+    method: "POST",
+    body: formData,
+  });
+
+  if (response.status === 202) {
+    const task = (await response.json()) as InpaintTaskSubmission;
+    request.onTaskSubmitted?.(task.task_id);
+    request.onProgress?.("消除背景任务已入队");
+    return pollInpaintTask(task, request, options);
+  }
+
+  if (!response.ok) {
+    const detail = await readErrorDetail(response);
+    throw new Error(detail || `Background removal failed with HTTP ${response.status}`);
+  }
+
+  return response.blob();
+}
+
+/** 提交 AI 超分请求，并可携带已经过前端归一化的裁剪区域。 */
+export async function upscaleImage(request: UpscaleRequest, options: InpaintOptions = {}): Promise<Blob> {
+  const formData = new FormData();
+  formData.append("image", request.image);
+  formData.append("upscale_factor", String(request.upscaleFactor));
+  if (request.crop) {
+    formData.append("crop", request.crop);
+  }
+
+  const response = await apiFetch("/api/upscale", {
+    method: "POST",
+    body: formData,
+  });
+
+  if (response.status === 202) {
+    const task = (await response.json()) as InpaintTaskSubmission;
+    request.onTaskSubmitted?.(task.task_id);
+    request.onProgress?.("超分任务已入队");
+    return pollInpaintTask(task, request, options);
+  }
+
+  if (!response.ok) {
+    const detail = await readErrorDetail(response);
+    throw new Error(detail || `Upscaling failed with HTTP ${response.status}`);
+  }
+
+  return response.blob();
+}
+
 
 async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
@@ -188,6 +300,11 @@ function formatTaskStatus(status: string): string {
     running: "处理中",
     retrying: "重试中",
   }[status] ?? status;
+}
+
+function formatTaskProgress(status: InpaintTaskStatus): string {
+  const label = status.message || `修复任务${formatTaskStatus(status.status)}`;
+  return typeof status.progress === "number" ? `${label} ${status.progress}%` : label;
 }
 
 async function readErrorDetail(response: Response): Promise<string> {
