@@ -41,6 +41,7 @@ export type PromptInpaintRequest = {
 
 export type RemoveBackgroundRequest = {
   image: File;
+  format?: string;
   onProgress?: (message: string) => void;
   onTaskSubmitted?: (taskId: string) => void;
   onTaskSettled?: (taskId: string) => void;
@@ -50,6 +51,7 @@ export type UpscaleRequest = {
   image: File;
   upscaleFactor: number;
   crop?: string;
+  format?: string;
   onProgress?: (message: string) => void;
   onTaskSubmitted?: (taskId: string) => void;
   onTaskSettled?: (taskId: string) => void;
@@ -229,6 +231,9 @@ export async function cancelInpaintTask(taskId: string): Promise<CancelTaskRespo
 export async function removeBackground(request: RemoveBackgroundRequest, options: InpaintOptions = {}): Promise<Blob> {
   const formData = new FormData();
   formData.append("image", request.image);
+  if (request.format) {
+    formData.append("format", request.format);
+  }
 
   const response = await apiFetch("/api/remove-background", {
     method: "POST",
@@ -257,6 +262,9 @@ export async function upscaleImage(request: UpscaleRequest, options: InpaintOpti
   formData.append("upscale_factor", String(request.upscaleFactor));
   if (request.crop) {
     formData.append("crop", request.crop);
+  }
+  if (request.format) {
+    formData.append("format", request.format);
   }
 
   const response = await apiFetch("/api/upscale", {

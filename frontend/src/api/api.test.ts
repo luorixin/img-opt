@@ -391,14 +391,14 @@ describe("api", () => {
     expect(url).toBe("http://127.0.0.1:8000/api/prompt-inpaint");
   });
 
-  it("submits a remove background request", async () => {
+  it("submits a remove background request with the selected format", async () => {
     const fetchMock = vi.fn(async () =>
       new Response("no-bg-png", { status: 200, headers: { "content-type": "image/png" } }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const image = new File(["image"], "source.png", { type: "image/png" });
 
-    const result = await removeBackground({ image });
+    const result = await removeBackground({ image, format: "WEBP" });
 
     expect(await result.text()).toBe("no-bg-png");
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
@@ -406,16 +406,17 @@ describe("api", () => {
     expect(init.method).toBe("POST");
     const formData = init.body as FormData;
     expect(formData.get("image")).toBe(image);
+    expect(formData.get("format")).toBe("WEBP");
   });
 
-  it("submits an upscale request with optional crop coordinates", async () => {
+  it("submits an upscale request with optional crop coordinates and format", async () => {
     const fetchMock = vi.fn(async () =>
       new Response("upscaled-png", { status: 200, headers: { "content-type": "image/png" } }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const image = new File(["image"], "source.png", { type: "image/png" });
 
-    const result = await upscaleImage({ image, upscaleFactor: 3, crop: "10,20,30,40" });
+    const result = await upscaleImage({ image, upscaleFactor: 3, crop: "10,20,30,40", format: "JPEG" });
 
     expect(await result.text()).toBe("upscaled-png");
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
@@ -425,5 +426,6 @@ describe("api", () => {
     expect(formData.get("image")).toBe(image);
     expect(formData.get("upscale_factor")).toBe("3");
     expect(formData.get("crop")).toBe("10,20,30,40");
+    expect(formData.get("format")).toBe("JPEG");
   });
 });

@@ -38,6 +38,8 @@ export default function App() {
   const upscaleFactor = useStore((state) => state.upscaleFactor);
   const prompt = useStore((state) => state.prompt);
   const algoMode = useStore((state) => state.algoMode);
+  // 新增：从 Zustand store 中获取当前选中的导出图像格式 (WEBP, PNG, JPEG)
+  const exportFormat = useStore((state) => state.exportFormat);
   const resultUrl = useStore((state) => state.resultUrl);
   const resultFilename = useStore((state) => state.resultFilename);
   const status = useStore((state) => state.status);
@@ -64,6 +66,8 @@ export default function App() {
   const setBackgroundTolerance = useStore((state) => state.setBackgroundTolerance);
   const setUpscaleFactor = useStore((state) => state.setUpscaleFactor);
   const setAlgoMode = useStore((state) => state.setAlgoMode);
+  // 新增：从 Zustand store 中获取修改导出图像格式的 Action
+  const setExportFormat = useStore((state) => state.setExportFormat);
   const setPrompt = useStore((state) => state.setPrompt);
   const undo = useStore((state) => state.undo);
   const redoAction = useStore((state) => state.redo);
@@ -128,9 +132,12 @@ export default function App() {
         backgroundTolerance={backgroundTolerance}
         upscaleFactor={upscaleFactor}
         algoMode={algoMode}
+        exportFormat={exportFormat}
         prompt={prompt}
         canUndo={canUndo}
         canRedo={canRedo}
+        undoLength={historyStack.length}
+        redoLength={redoStack.length}
         hasImage={hasImage}
         canCrop={canCrop}
         canPromptInpaint={canPromptInpaint}
@@ -146,6 +153,7 @@ export default function App() {
         onBackgroundToleranceChange={setBackgroundTolerance}
         onUpscaleFactorChange={setUpscaleFactor}
         onAlgoModeChange={setAlgoMode}
+        onExportFormatChange={setExportFormat}
         onPromptChange={setPrompt}
         onImageSelected={(file) => void handleImageUpload(firstImageFile(file ? [file] : []))}
         onUndo={undo}

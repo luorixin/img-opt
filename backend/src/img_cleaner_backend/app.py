@@ -7,6 +7,7 @@ FastAPI 应用程序主入口。
 from __future__ import annotations
 
 import os
+from contextlib import asynccontextmanager
 from io import BytesIO
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
@@ -29,6 +30,7 @@ from img_cleaner_backend.image_validation import (
     validate_image_pixels,
     validate_upscale_request,
 )
+from img_cleaner_backend.runtime_config import env_flag_with_legacy
 
 SIDECAR_HINT = (
     "IOPaint sidecar is unavailable. Start it with: "
@@ -62,7 +64,20 @@ def create_app(
     返回:
         FastAPI: 配置好的应用实例。
     """
-    app = FastAPI(title="Image Cleaner Backend")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # 默认不在 API 容器预载 AI 模型，避免与 Celery Worker 重复常驻同一份推理内存。
+        # BACKEND_AI_PRELOAD_MODELS 优先于旧的 AI_PRELOAD_MODELS，可单独控制 API 容器。
+        if env_flag_with_legacy("BACKEND_AI_PRELOAD_MODELS", "AI_PRELOAD_MODELS", default=False):
+            try:
+                from img_cleaner_backend.ai_engines import _get_onnx_session
+                await run_in_threadpool(_get_onnx_session)
+            except Exception as exc:
+                import logging
+                logging.getLogger("img_cleaner_backend").warning("AI model pre-loading failed at startup: %s", exc)
+        yield
+
+    app = FastAPI(title="Image Cleaner Backend", lifespan=lifespan)
     app.state.engine = engine or build_engine_from_env()
     app.state.prompt_engine = prompt_engine or build_prompt_engine_from_env()
     app.state.task_queue = task_queue or build_task_queue_from_env()
@@ -84,15 +99,21 @@ def create_app(
     async def health():
         """
         健康检查接口。
-        检查应用程序本身的存活状态，并返回底层引擎和任务队列的可用性。
+        检查应用程序本身的存活状态，并返回底层引擎、任务队列以及 AI 模型的可用性。
         """
         engine_status = await app.state.engine.health()
         prompt_engine_status = await app.state.prompt_engine.health()
+
+        # 检查 AI 超分 ONNX 推理模型是否已经预载成功
+        from img_cleaner_backend import ai_engines
+        model_loaded = ai_engines._session is not None
+
         return {
             "ok": True,
             "engine": engine_status,
             "prompt_engine": prompt_engine_status,
             "task_queue": {"enabled": app.state.task_queue.enabled},
+            "upscaler": {"loaded": model_loaded},
         }
 
     @app.post(
@@ -304,14 +325,24 @@ def create_app(
     )
     async def remove_background(
         image: UploadFile = File(...),
+        format: str = Form("PNG"),
     ):
         """
         AI 背景分割 (去除背景) 接口。
         """
+        fmt_upper = format.upper()
+        if fmt_upper not in ("PNG", "WEBP"):
+            raise HTTPException(
+                status_code=400,
+                detail="Only PNG and WEBP formats are supported for background removal.",
+            )
         image_bytes = await _read_upload_with_limit(image)
         _, normalized_image = _read_image(image_bytes)
         if app.state.task_queue.enabled:
-            task_id = app.state.task_queue.enqueue_remove_background(normalized_image)
+            task_id = app.state.task_queue.enqueue_remove_background(
+                normalized_image,
+                format=fmt_upper,
+            )
             return JSONResponse(
                 status_code=202,
                 content={
@@ -324,8 +355,9 @@ def create_app(
 
         try:
             from img_cleaner_backend.ai_engines import remove_background
-            result = await run_in_threadpool(remove_background, normalized_image)
-            return Response(content=result, media_type="image/png")
+            result = await run_in_threadpool(remove_background, normalized_image, format=fmt_upper)
+            media_type = f"image/{fmt_upper.lower()}"
+            return Response(content=result, media_type=media_type)
         except Exception as exc:
             raise HTTPException(
                 status_code=500,
@@ -343,10 +375,17 @@ def create_app(
         image: UploadFile = File(...),
         upscale_factor: int = Form(2, ge=2, le=4),
         crop: str | None = Form(None),
+        format: str = Form("PNG"),
     ):
         """
         AI 超分和裁剪接口。
         """
+        fmt_upper = format.upper()
+        if fmt_upper not in ("PNG", "WEBP", "JPEG", "JPG"):
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported output format. Supported: PNG, WEBP, JPEG, JPG.",
+            )
         image_bytes = await _read_upload_with_limit(image)
         image_size, normalized_image = _read_image(image_bytes)
         try:
@@ -358,6 +397,7 @@ def create_app(
                 normalized_image,
                 upscale_factor,
                 normalized_crop,
+                format=fmt_upper,
             )
             return JSONResponse(
                 status_code=202,
@@ -376,8 +416,11 @@ def create_app(
                 normalized_image,
                 upscale_factor,
                 normalized_crop,
+                format=fmt_upper,
             )
-            return Response(content=result, media_type="image/png")
+            fmt_lower = fmt_upper.lower()
+            media_type = "image/jpeg" if fmt_lower in ("jpg", "jpeg") else f"image/{fmt_lower}"
+            return Response(content=result, media_type=media_type)
         except Exception as exc:
             raise HTTPException(
                 status_code=500,
@@ -397,6 +440,13 @@ def create_app(
         status = app.state.task_queue.get_status(task_id)
         result = app.state.task_queue.get_result(task_id)
         if result is not None:
+            # 兼容旧的队列实现返回 bytes；新的队列结果会携带 content_type，
+            # 用于 WEBP/JPEG 异步任务保持与同步接口一致的响应类型。
+            if isinstance(result, dict):
+                return Response(
+                    content=result["content"],
+                    media_type=result.get("content_type", "image/png"),
+                )
             return Response(content=result, media_type="image/png")
         if status.get("status") == "failed":
             raise HTTPException(

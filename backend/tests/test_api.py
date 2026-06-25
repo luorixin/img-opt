@@ -111,7 +111,63 @@ def test_health_reports_backend_and_engine_status():
         "engine": {"available": True, "engine": "fake"},
         "prompt_engine": {"available": True, "engine": "fake-prompt"},
         "task_queue": {"enabled": False},
+        "upscaler": {"loaded": False},
     }
+
+
+def test_backend_lifespan_does_not_preload_ai_model_by_default(monkeypatch):
+    """默认情况下 API 容器不应预载 AI 模型，避免与 Worker 重复常驻推理内存。"""
+    from img_cleaner_backend import ai_engines
+
+    calls = []
+    monkeypatch.delenv("AI_PRELOAD_MODELS", raising=False)
+    monkeypatch.delenv("BACKEND_AI_PRELOAD_MODELS", raising=False)
+    monkeypatch.setattr(ai_engines, "_session", None)
+    monkeypatch.setattr(ai_engines, "_get_onnx_session", lambda: calls.append("loaded"))
+
+    with TestClient(create_app(FakeEngine())) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    assert calls == []
+
+
+def test_backend_lifespan_preloads_ai_model_when_enabled(monkeypatch):
+    """需要低首帧延迟时，可通过环境变量显式开启 API 容器预热。"""
+    from img_cleaner_backend import ai_engines
+
+    calls = []
+
+    def fake_get_onnx_session():
+        calls.append("loaded")
+        return object()
+
+    monkeypatch.setenv("BACKEND_AI_PRELOAD_MODELS", "true")
+    monkeypatch.setattr(ai_engines, "_session", None)
+    monkeypatch.setattr(ai_engines, "_get_onnx_session", fake_get_onnx_session)
+
+    with TestClient(create_app(FakeEngine())) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    assert calls == ["loaded"]
+
+
+def test_backend_specific_preload_flag_overrides_legacy_shared_flag(monkeypatch):
+    """API 专用开关应优先于旧的共享开关，避免只想预热 Worker 时误预热 API。"""
+    from img_cleaner_backend import ai_engines
+
+    calls = []
+    monkeypatch.setenv("AI_PRELOAD_MODELS", "true")
+    monkeypatch.setenv("BACKEND_AI_PRELOAD_MODELS", "false")
+    monkeypatch.setattr(ai_engines, "_session", None)
+    monkeypatch.setattr(ai_engines, "_get_onnx_session", lambda: calls.append("loaded"))
+
+    with TestClient(create_app(FakeEngine())) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    assert calls == []
 
 
 def test_inpaint_requires_image_and_mask_files():
@@ -340,7 +396,7 @@ def test_upscale_returns_png():
         )
         assert response.status_code == 200
         assert response.content == b"fake-upscaled-png"
-        mock_run.assert_called_once_with(mock_run.call_args[0][0], 3, "1,2,3,4")
+        mock_run.assert_called_once_with(mock_run.call_args[0][0], 3, "1,2,3,4", format="PNG")
 
 
 def test_upscale_rejects_crop_outside_image_bounds():
@@ -380,8 +436,8 @@ def test_remove_background_runs_sync_engine_in_threadpool(monkeypatch):
     """队列关闭时也不能在异步路由中直接阻塞事件循环。"""
     calls = []
 
-    async def fake_run_in_threadpool(function, *args):
-        calls.append((function, args))
+    async def fake_run_in_threadpool(function, *args, **kwargs):
+        calls.append((function, args, kwargs))
         return b"thread-result"
 
     from unittest.mock import patch

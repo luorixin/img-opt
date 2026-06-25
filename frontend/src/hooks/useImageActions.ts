@@ -36,6 +36,7 @@ export function useImageActions(
   const cropRects = useStore((state) => state.cropRects);
   const resultUrl = useStore((state) => state.resultUrl);
   const algoMode = useStore((state) => state.algoMode);
+  const exportFormat = useStore((state) => state.exportFormat);
 
   const setStatus = useStore((state) => state.setStatus);
   const setBusy = useStore((state) => state.setBusy);
@@ -85,16 +86,22 @@ export function useImageActions(
       if (algoMode === "ai") {
         result = await removeBackground({
           image: image.file,
+          format: exportFormat === "JPEG" ? "PNG" : exportFormat,
           onProgress: setStatus,
           onTaskSubmitted: registerTask,
           onTaskSettled: unregisterTask,
         });
       } else {
-        result = await imageToTransparentBackgroundBlob(source, backgroundTolerance);
+        result = await imageToTransparentBackgroundBlob(
+          source,
+          backgroundTolerance,
+          exportFormat === "JPEG" ? "PNG" : exportFormat,
+        );
       }
       if (resultUrl) URL.revokeObjectURL(resultUrl);
       setResultUrl(URL.createObjectURL(result));
-      setResultFilename("transparent-background.png");
+      const ext = (exportFormat === "JPEG" ? "PNG" : exportFormat).toLowerCase();
+      setResultFilename(`transparent-background.${ext}`);
       setStatus("透明背景完成");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "透明背景失败");
@@ -115,16 +122,18 @@ export function useImageActions(
         result = await upscaleImage({
           image: image.file,
           upscaleFactor,
+          format: exportFormat,
           onProgress: setStatus,
           onTaskSubmitted: registerTask,
           onTaskSettled: unregisterTask,
         });
       } else {
-        result = await imageToEnhancedResolutionBlob(source, upscaleFactor, 0.65);
+        result = await imageToEnhancedResolutionBlob(source, upscaleFactor, 0.65, exportFormat);
       }
       if (resultUrl) URL.revokeObjectURL(resultUrl);
       setResultUrl(URL.createObjectURL(result));
-      setResultFilename(`enhanced-${upscaleFactor}x.png`);
+      const ext = exportFormat.toLowerCase();
+      setResultFilename(`enhanced-${upscaleFactor}x.${ext}`);
       setStatus(`${source.naturalWidth * upscaleFactor} x ${source.naturalHeight * upscaleFactor}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "清晰增强失败");
@@ -152,16 +161,18 @@ export function useImageActions(
               image: image.file,
               upscaleFactor,
               crop: cropStr,
+              format: exportFormat,
               onProgress: (msg) => setStatus(`区域 ${index + 1}: ${msg}`),
               onTaskSubmitted: registerTask,
               onTaskSettled: unregisterTask,
             });
           } else {
-            blob = await cropAndEnhanceImageBlob(source, rect, upscaleFactor, 0.65);
+            blob = await cropAndEnhanceImageBlob(source, rect, upscaleFactor, 0.65, exportFormat);
           }
+          const cropExt = exportFormat.toLowerCase();
           return {
             blob,
-            filename: buildCropFilename(rect, upscaleFactor, cropRects.length > 1 ? index + 1 : undefined),
+            filename: buildCropFilename(rect, upscaleFactor, cropRects.length > 1 ? index + 1 : undefined).replace(/\.png$/, "." + cropExt),
             rect,
           };
         }),

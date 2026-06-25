@@ -15,6 +15,7 @@ dependencies = [
   "uvicorn[standard]==0.38.0",
   "rembg==2.0.76",
   "onnxruntime==1.27.0",
+  "onnx==1.22.0",
 ]
 
 [project.optional-dependencies]

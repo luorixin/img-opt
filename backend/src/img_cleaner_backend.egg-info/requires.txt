@@ -6,6 +6,7 @@ python-multipart==0.0.20
 uvicorn[standard]==0.38.0
 rembg==2.0.76
 onnxruntime==1.27.0
+onnx==1.22.0
 
 [test]
 pytest==9.0.2

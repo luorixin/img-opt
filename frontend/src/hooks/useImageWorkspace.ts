@@ -58,6 +58,7 @@ export function useImageWorkspace() {
           backgroundTolerance: settings.backgroundTolerance ?? 18,
           upscaleFactor: settings.upscaleFactor ?? 2,
           algoMode: settings.algoMode ?? "fast",
+          exportFormat: settings.exportFormat ?? "PNG",
           status: `已载入上次工作区 (${loaded.naturalWidth}x${loaded.naturalHeight})`,
           zoom: 1.0,
           panX: 0,

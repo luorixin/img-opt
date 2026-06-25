@@ -110,6 +110,7 @@ export type SavedState = {
     upscaleFactor: number;
     tool: any; // 选中的工具名称，如 brush, rectangle 等
     algoMode?: "fast" | "ai";
+    exportFormat?: "PNG" | "WEBP" | "JPEG";
   };
 };
 

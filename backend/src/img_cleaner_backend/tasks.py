@@ -125,6 +125,7 @@ def prompt_inpaint_task(
 def remove_background_task(
     self,
     input_id: str,
+    format: str = "PNG",
 ) -> dict:
     """
     执行 AI 背景分割（去除背景）的异步任务。
@@ -142,12 +143,13 @@ def remove_background_task(
             meta={"status": "running", "progress": 30, "message": "Removing background"},
         )
         from img_cleaner_backend.ai_engines import remove_background
-        result = remove_background(image_bytes)
+        result = remove_background(image_bytes, format=format)
         self.update_state(
             state="STARTED",
             meta={"status": "running", "progress": 90, "message": "Saving result"},
         )
-        return {"content_type": "image/png", "image_path": storage.write_result(self.request.id, result)}
+        media_type = f"image/{format.lower()}"
+        return {"content_type": media_type, "image_path": storage.write_result(self.request.id, result)}
     finally:
         storage.delete_input(input_id)
 
@@ -158,6 +160,7 @@ def upscale_task(
     input_id: str,
     upscale_factor: int,
     crop: str | None,
+    format: str = "PNG",
 ) -> dict:
     """
     执行 AI 超分和裁剪的异步任务。
@@ -175,11 +178,13 @@ def upscale_task(
             meta={"status": "running", "progress": 30, "message": "Running upscale"},
         )
         from img_cleaner_backend.ai_engines import run_upscale
-        result = run_upscale(image_bytes, upscale_factor, crop)
+        result = run_upscale(image_bytes, upscale_factor, crop, format=format)
         self.update_state(
             state="STARTED",
             meta={"status": "running", "progress": 90, "message": "Saving result"},
         )
-        return {"content_type": "image/png", "image_path": storage.write_result(self.request.id, result)}
+        fmt_lower = format.lower()
+        media_type = "image/jpeg" if fmt_lower in ("jpg", "jpeg") else f"image/{fmt_lower}"
+        return {"content_type": media_type, "image_path": storage.write_result(self.request.id, result)}
     finally:
         storage.delete_input(input_id)

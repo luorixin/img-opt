@@ -54,6 +54,10 @@ API_TOKEN=change-me RATE_LIMIT_PER_MINUTE=20 docker compose up -d --build
 
 `VITE_API_TOKEN` 会进入浏览器产物，只适合本地或可信内网联调，不能作为公网秘密。公网部署应由网关或服务端会话完成鉴权。Worker 默认 `CELERY_WORKER_CONCURRENCY=1`，用于降低多图并发时的显存/内存峰值；确认模型和机器容量足够后再调高。
 
+Compose 默认给各服务设置了可覆盖的资源上限，避免 Docker Desktop 空闲时看起来“吃满”整台机器：`BACKEND_MEMORY_LIMIT=768m`、`WORKER_MEMORY_LIMIT=2g`、`FRONTEND_MEMORY_LIMIT=128m`、`REDIS_MEMORY_LIMIT=128m`，以及对应的 `*_CPUS`。如果要处理大图或 diffusion 模型，可在 `.env` 中调大这些值。
+
+后端 AI 模型默认懒加载，避免 API 容器和 Worker 同时常驻同一份推理内存。需要牺牲空闲内存换取首个任务低延迟时，可分别设置 `BACKEND_AI_PRELOAD_MODELS=true` 或 `WORKER_AI_PRELOAD_MODELS=true`；旧变量 `AI_PRELOAD_MODELS` 仍作为兼容 fallback。ONNX Runtime 默认限制为 `UPSCALER_INTRA_OP_THREADS=1`、`UPSCALER_INTER_OP_THREADS=1`，大图 CPU 超分较慢时可按机器核心数逐步调高。
+
 异步任务默认把上传图片和 mask 写入共享任务目录，再把任务引用放入 Redis/Celery，避免大图二进制被 base64 塞进队列消息。Compose 中 `backend` 和 `worker` 共享 `task-data` volume；本地运行时可用 `TASK_STORAGE_DIR=/tmp/img-cleaner-tasks` 覆盖。结果、排队输入和活动租约分别由 `TASK_ARTIFACT_EXPIRES_SECONDS`、`TASK_INPUT_EXPIRES_SECONDS`、`TASK_ACTIVE_EXPIRES_SECONDS` 控制。
 
 公网部署建议设置 `MAX_UPLOAD_BYTES`、`MAX_IMAGE_PIXELS`、`MAX_OUTPUT_PIXELS` 和 `RATE_LIMIT_REDIS_URL`。前两类像素上限会在任务入队前拒绝压缩图片炸弹、越界裁剪和过大的超分输出。Real-ESRGAN 与 rembg 模型默认缓存到 `ai-models` volume；可通过 `UPSCALER_MODEL_PATH`、`UPSCALER_MODEL_URL`、`UPSCALER_MODEL_SHA256` 和 `UPSCALER_MODEL_DOWNLOAD_TIMEOUT_SECONDS` 覆盖下载配置。

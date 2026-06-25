@@ -237,6 +237,36 @@ a {
   border-color: #334148;
 }
 
+.modeToggleBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  min-height: 38px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 14px;
+  letter-spacing: 1px;
+}
+
+.modeToggleBtn.active {
+  border-color: #11835f;
+  color: #ffffff;
+  background: #11835f;
+}
+
+.modeToggleBtn:not(.active) {
+  border-color: #333333;
+  color: #526167;
+  background: #ffffff;
+}
+
+.modeToggleBtn:not(.active):hover {
+  background: #f8f9fa;
+  transform: translateY(1px);
+  box-shadow: 1px 1px 0px rgba(0,0,0,0.15);
+}
+
 .statusLine {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr) 0;

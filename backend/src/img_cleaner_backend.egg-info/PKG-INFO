@@ -10,5 +10,6 @@ Requires-Dist: python-multipart==0.0.20
 Requires-Dist: uvicorn[standard]==0.38.0
 Requires-Dist: rembg==2.0.76
 Requires-Dist: onnxruntime==1.27.0
+Requires-Dist: onnx==1.22.0
 Provides-Extra: test
 Requires-Dist: pytest==9.0.2; extra == "test"

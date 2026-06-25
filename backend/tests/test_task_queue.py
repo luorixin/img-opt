@@ -136,6 +136,22 @@ def test_task_result_returns_png_when_task_succeeded():
     assert response.content == b"png-result"
 
 
+def test_task_result_uses_content_type_from_queue_payload():
+    """异步 WEBP/JPEG 任务的结果接口必须保留 Worker 记录的真实媒体类型。"""
+    queue = FakeTaskQueue()
+    queue.results["task-1"] = {
+        "content": b"webp-result",
+        "content_type": "image/webp",
+    }
+    client = TestClient(create_app(FakeEngine(), task_queue=queue))
+
+    response = client.get("/api/tasks/task-1/result")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/webp"
+    assert response.content == b"webp-result"
+
+
 def test_task_result_returns_202_when_pending():
     queue = FakeTaskQueue()
     client = TestClient(create_app(FakeEngine(), task_queue=queue))
@@ -299,3 +315,35 @@ def test_celery_queue_persists_cancelled_status_for_known_task():
     assert queue.cancel("task-1") is True
     assert queue.get_status("task-1")["status"] == "cancelled"
     assert queue.storage.deleted == ["task-1"]
+
+
+def test_celery_queue_result_preserves_content_type():
+    """Celery 任务结果中的 content_type 应透传给 HTTP 结果接口。"""
+
+    class FakeResult:
+        state = "SUCCESS"
+        result = {
+            "content_type": "image/jpeg",
+            "image_path": "/tmp/result.jpg",
+        }
+
+    class FakeCelery:
+        def AsyncResult(self, task_id):
+            return FakeResult()
+
+    class FakeStorage:
+        def is_cancelled(self, task_id):
+            return False
+
+        def read_result(self, path):
+            assert path == "/tmp/result.jpg"
+            return b"jpeg-result"
+
+    queue = object.__new__(CeleryTaskQueue)
+    queue.celery_app = FakeCelery()
+    queue.storage = FakeStorage()
+
+    assert queue.get_result("task-1") == {
+        "content": b"jpeg-result",
+        "content_type": "image/jpeg",
+    }

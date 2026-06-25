@@ -3,6 +3,8 @@ import { applyTransparentBackground } from "./backgroundTransparency";
 import { applyUnsharpMask, calculateUpscaledSize } from "./resolutionEnhancement";
 import { calculateCropOutputSize, type CropRect } from "./crop";
 
+export type ExportImageFormat = "PNG" | "WEBP" | "JPEG";
+
 export function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image();
@@ -87,6 +89,7 @@ export async function pngBlobToMaskData(blob: Blob): Promise<MaskData> {
 export function imageToTransparentBackgroundBlob(
   image: HTMLImageElement,
   tolerance: number,
+  format: ExportImageFormat = "PNG",
 ): Promise<Blob> {
   const canvas = document.createElement("canvas");
   canvas.width = image.naturalWidth;
@@ -104,18 +107,14 @@ export function imageToTransparentBackgroundBlob(
   );
   context.putImageData(new ImageData(transparentPixels, image.naturalWidth, image.naturalHeight), 0, 0);
 
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) resolve(blob);
-      else reject(new Error("透明背景导出失败"));
-    }, "image/png");
-  });
+  return canvasToBlob(canvas, format, "透明背景导出失败");
 }
 
 export function imageToEnhancedResolutionBlob(
   image: HTMLImageElement,
   scale: number,
   sharpenAmount: number,
+  format: ExportImageFormat = "PNG",
 ): Promise<Blob> {
   const size = calculateUpscaledSize(image.naturalWidth, image.naturalHeight, scale);
   const canvas = document.createElement("canvas");
@@ -132,12 +131,7 @@ export function imageToEnhancedResolutionBlob(
   const sharpenedPixels = applyUnsharpMask(imageData.data, size.width, size.height, sharpenAmount);
   context.putImageData(new ImageData(sharpenedPixels, size.width, size.height), 0, 0);
 
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) resolve(blob);
-      else reject(new Error("高清图片导出失败"));
-    }, "image/png");
-  });
+  return canvasToBlob(canvas, format, "高清图片导出失败");
 }
 
 export function cropAndEnhanceImageBlob(
@@ -145,6 +139,7 @@ export function cropAndEnhanceImageBlob(
   rect: CropRect,
   scale: number,
   sharpenAmount: number,
+  format: ExportImageFormat = "PNG",
 ): Promise<Blob> {
   const size = calculateCropOutputSize(rect, scale);
   const canvas = document.createElement("canvas");
@@ -171,10 +166,35 @@ export function cropAndEnhanceImageBlob(
   const sharpenedPixels = applyUnsharpMask(imageData.data, size.width, size.height, sharpenAmount);
   context.putImageData(new ImageData(sharpenedPixels, size.width, size.height), 0, 0);
 
+  return canvasToBlob(canvas, format, "切图导出失败");
+}
+
+function canvasToBlob(
+  canvas: HTMLCanvasElement,
+  format: ExportImageFormat,
+  errorMessage: string,
+): Promise<Blob> {
+  /**
+   * 将业务层的导出格式映射为 Canvas 支持的 MIME。
+   * 这里集中处理，避免调用方只修改文件扩展名却忘记真实编码格式。
+   */
+  const mimeType = imageFormatToMimeType(format);
+  const quality = format === "PNG" ? undefined : 0.9;
+
   return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) resolve(blob);
-      else reject(new Error("切图导出失败"));
-    }, "image/png");
+    canvas.toBlob(
+      (blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error(errorMessage));
+      },
+      mimeType,
+      quality,
+    );
   });
+}
+
+function imageFormatToMimeType(format: ExportImageFormat): string {
+  if (format === "WEBP") return "image/webp";
+  if (format === "JPEG") return "image/jpeg";
+  return "image/png";
 }

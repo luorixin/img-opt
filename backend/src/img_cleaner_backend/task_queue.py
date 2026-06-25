@@ -9,9 +9,16 @@ from __future__ import annotations
 import base64
 import os
 import uuid
-from typing import Protocol
+from typing import Protocol, TypedDict
 
 from img_cleaner_backend.task_storage import TaskFileStorage, build_task_file_storage_from_env
+
+
+class TaskResultPayload(TypedDict):
+    """异步任务结果载荷，包含图片字节和真实响应媒体类型。"""
+
+    content: bytes
+    content_type: str
 
 
 class TaskQueue(Protocol):
@@ -40,16 +47,16 @@ class TaskQueue(Protocol):
     ) -> str:
         raise NotImplementedError
 
-    def enqueue_remove_background(self, image_bytes: bytes) -> str:
+    def enqueue_remove_background(self, image_bytes: bytes, format: str = "PNG") -> str:
         raise NotImplementedError
 
-    def enqueue_upscale(self, image_bytes: bytes, upscale_factor: int, crop: str | None) -> str:
+    def enqueue_upscale(self, image_bytes: bytes, upscale_factor: int, crop: str | None, format: str = "PNG") -> str:
         raise NotImplementedError
 
     def get_status(self, task_id: str) -> dict:
         raise NotImplementedError
 
-    def get_result(self, task_id: str) -> bytes | None:
+    def get_result(self, task_id: str) -> TaskResultPayload | bytes | None:
         raise NotImplementedError
 
     def cancel(self, task_id: str) -> bool:
@@ -85,16 +92,16 @@ class DisabledTaskQueue:
     ) -> str:
         raise RuntimeError("Task queue is disabled.")
 
-    def enqueue_remove_background(self, image_bytes: bytes) -> str:
+    def enqueue_remove_background(self, image_bytes: bytes, format: str = "PNG") -> str:
         raise RuntimeError("Task queue is disabled.")
 
-    def enqueue_upscale(self, image_bytes: bytes, upscale_factor: int, crop: str | None) -> str:
+    def enqueue_upscale(self, image_bytes: bytes, upscale_factor: int, crop: str | None, format: str = "PNG") -> str:
         raise RuntimeError("Task queue is disabled.")
 
     def get_status(self, task_id: str) -> dict:
         return {"task_id": task_id, "state": "DISABLED", "status": "disabled"}
 
-    def get_result(self, task_id: str) -> bytes | None:
+    def get_result(self, task_id: str) -> TaskResultPayload | bytes | None:
         return None
 
     def cancel(self, task_id: str) -> bool:
@@ -162,16 +169,17 @@ class CeleryTaskQueue:
             seed,
         )
 
-    def enqueue_remove_background(self, image_bytes: bytes) -> str:
-        return self._enqueue_with_files(self.remove_background_task, image_bytes, b"")
+    def enqueue_remove_background(self, image_bytes: bytes, format: str = "PNG") -> str:
+        return self._enqueue_with_files(self.remove_background_task, image_bytes, b"", format)
 
-    def enqueue_upscale(self, image_bytes: bytes, upscale_factor: int, crop: str | None) -> str:
+    def enqueue_upscale(self, image_bytes: bytes, upscale_factor: int, crop: str | None, format: str = "PNG") -> str:
         return self._enqueue_with_files(
             self.upscale_task,
             image_bytes,
             b"",
             upscale_factor,
             crop,
+            format,
         )
 
     def _enqueue_with_files(self, task, image_bytes: bytes, mask_bytes: bytes, *arguments) -> str:
@@ -207,7 +215,7 @@ class CeleryTaskQueue:
             payload["error"] = str(result.result)
         return payload
 
-    def get_result(self, task_id: str) -> bytes | None:
+    def get_result(self, task_id: str) -> TaskResultPayload | bytes | None:
         if self.storage.is_cancelled(task_id):
             return None
         result = self.celery_app.AsyncResult(task_id)
@@ -217,10 +225,16 @@ class CeleryTaskQueue:
         if not isinstance(payload, dict):
             raise RuntimeError("Task completed without an image result.")
         if "image_path" in payload:
-            return self.storage.read_result(payload["image_path"])
+            return {
+                "content": self.storage.read_result(payload["image_path"]),
+                "content_type": payload.get("content_type", "image/png"),
+            }
         if "image" not in payload:
             raise RuntimeError("Task completed without an image result.")
-        return decode_bytes(payload["image"])
+        return {
+            "content": decode_bytes(payload["image"]),
+            "content_type": payload.get("content_type", "image/png"),
+        }
 
     def cancel(self, task_id: str) -> bool:
         result = self.celery_app.AsyncResult(task_id)

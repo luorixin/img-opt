@@ -1,6 +1,8 @@
 services:
   redis:
     image: redis:8-alpine
+    cpus: ${REDIS_CPUS:-0.25}
+    mem_limit: ${REDIS_MEMORY_LIMIT:-128m}
     ports:
       - "6379:6379"
     healthcheck:
@@ -39,8 +41,13 @@ services:
       TASK_INPUT_EXPIRES_SECONDS: ${TASK_INPUT_EXPIRES_SECONDS:-86400}
       TASK_ACTIVE_EXPIRES_SECONDS: ${TASK_ACTIVE_EXPIRES_SECONDS:-86400}
       UPSCALER_MODEL_PATH: ${UPSCALER_MODEL_PATH:-/ai-models/Real-ESRGAN_x2plus.onnx}
+      UPSCALER_INTRA_OP_THREADS: ${UPSCALER_INTRA_OP_THREADS:-1}
+      UPSCALER_INTER_OP_THREADS: ${UPSCALER_INTER_OP_THREADS:-1}
       U2NET_HOME: ${U2NET_HOME:-/ai-models/rembg}
       TASK_QUEUE_ENABLED: ${TASK_QUEUE_ENABLED:-true}
+      BACKEND_AI_PRELOAD_MODELS: ${BACKEND_AI_PRELOAD_MODELS:-${AI_PRELOAD_MODELS:-false}}
+    cpus: ${BACKEND_CPUS:-1.0}
+    mem_limit: ${BACKEND_MEMORY_LIMIT:-768m}
     ports:
       - "8000:8000"
     depends_on:
@@ -79,7 +86,12 @@ services:
       TASK_INPUT_EXPIRES_SECONDS: ${TASK_INPUT_EXPIRES_SECONDS:-86400}
       TASK_ACTIVE_EXPIRES_SECONDS: ${TASK_ACTIVE_EXPIRES_SECONDS:-86400}
       UPSCALER_MODEL_PATH: ${UPSCALER_MODEL_PATH:-/ai-models/Real-ESRGAN_x2plus.onnx}
+      UPSCALER_INTRA_OP_THREADS: ${UPSCALER_INTRA_OP_THREADS:-1}
+      UPSCALER_INTER_OP_THREADS: ${UPSCALER_INTER_OP_THREADS:-1}
       U2NET_HOME: ${U2NET_HOME:-/ai-models/rembg}
+      WORKER_AI_PRELOAD_MODELS: ${WORKER_AI_PRELOAD_MODELS:-${AI_PRELOAD_MODELS:-false}}
+    cpus: ${WORKER_CPUS:-2.0}
+    mem_limit: ${WORKER_MEMORY_LIMIT:-2g}
     depends_on:
       redis:
         condition: service_healthy
@@ -93,6 +105,8 @@ services:
       dockerfile: frontend/Dockerfile
       args:
         VITE_API_BASE_URL: http://127.0.0.1:8000
+    cpus: ${FRONTEND_CPUS:-0.25}
+    mem_limit: ${FRONTEND_MEMORY_LIMIT:-128m}
     ports:
       - "5173:80"
     depends_on:
@@ -105,6 +119,8 @@ services:
       dockerfile: docker/iopaint/Dockerfile
     profiles:
       - iopaint
+    cpus: ${IOPAINT_CPUS:-2.0}
+    mem_limit: ${IOPAINT_MEMORY_LIMIT:-3g}
     ports:
       - "8081:8081"
     volumes:
@@ -122,6 +138,8 @@ services:
       dockerfile: docker/iopaint/Dockerfile
     profiles:
       - diffusion
+    cpus: ${IOPAINT_DIFFUSION_CPUS:-4.0}
+    mem_limit: ${IOPAINT_DIFFUSION_MEMORY_LIMIT:-6g}
     command:
       - iopaint
       - start

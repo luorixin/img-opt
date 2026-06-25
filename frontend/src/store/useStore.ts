@@ -40,6 +40,7 @@ interface AppState {
   backgroundTolerance: number; // 背景消除颜色容差 (0 - 80)
   upscaleFactor: number; // 清晰度放大倍率 (2 - 4)
   algoMode: "fast" | "ai"; // 算法模式: fast(端侧 Canvas 算法) | ai(后端 AI 算法)
+  exportFormat: "PNG" | "WEBP" | "JPEG"; // 导出图片格式 (PNG | WEBP | JPEG)
   previewRect: PreviewRect; // 局部涂抹框选框临时数据
 
   cropRects: CropRect[]; // 已选的切图框选区域列表
@@ -82,6 +83,7 @@ interface AppState {
   setBackgroundTolerance: (tolerance: number) => void;
   setUpscaleFactor: (factor: number) => void;
   setAlgoMode: (mode: "fast" | "ai") => void;
+  setExportFormat: (format: "PNG" | "WEBP" | "JPEG") => void;
   setPreviewRect: (rect: PreviewRect) => void;
 
   setCropRects: (rects: CropRect[]) => void;
@@ -130,6 +132,7 @@ export const useStore = create<AppState>((set, get) => ({
   backgroundTolerance: 18,
   upscaleFactor: 2,
   algoMode: "fast",
+  exportFormat: "PNG",
   previewRect: null,
 
   cropRects: [],
@@ -190,6 +193,10 @@ export const useStore = create<AppState>((set, get) => ({
   },
   setAlgoMode: (algoMode) => {
     set({ algoMode });
+    get().persistToDB();
+  },
+  setExportFormat: (exportFormat) => {
+    set({ exportFormat });
     get().persistToDB();
   },
   setPreviewRect: (previewRect) => set({ previewRect }),
@@ -319,6 +326,7 @@ export const useStore = create<AppState>((set, get) => ({
           backgroundTolerance: state.backgroundTolerance,
           upscaleFactor: state.upscaleFactor,
           algoMode: state.algoMode,
+          exportFormat: state.exportFormat,
           tool: state.tool,
         },
         (err) => {

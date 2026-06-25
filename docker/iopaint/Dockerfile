@@ -1,10 +1,13 @@
+# syntax=docker/dockerfile:1.7
+
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir iopaint
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple && \
+    pip install iopaint -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 EXPOSE 8081
 
