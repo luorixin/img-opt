@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { DebouncedSaveQueue } from "./db";
+import { DebouncedSaveQueue, compressMaskRLE, decompressMaskRLE } from "./db";
 
 describe("DebouncedSaveQueue", () => {
   it("serializes overlapping writes", async () => {
@@ -60,3 +60,45 @@ describe("DebouncedSaveQueue", () => {
     vi.useRealTimers();
   });
 });
+
+describe("Mask RLE 游程编码压缩算法", () => {
+  it("能正确压缩和解压空像素数组", () => {
+    const alpha = new Uint8ClampedArray(0);
+    const compressed = compressMaskRLE(alpha);
+    expect(compressed.length).toBe(0);
+    const decompressed = decompressMaskRLE(compressed, 0);
+    expect(decompressed.length).toBe(0);
+  });
+
+  it("能高效压缩全相同颜色的像素数组", () => {
+    const size = 1000;
+    const alpha = new Uint8ClampedArray(size).fill(255);
+    const compressed = compressMaskRLE(alpha);
+    // 应该只记录两个数值：值255，以及连续的个数1000
+    expect(Array.from(compressed)).toEqual([255, 1000]);
+    const decompressed = decompressMaskRLE(compressed, size);
+    expect(decompressed).toEqual(alpha);
+  });
+
+  it("能正确压缩和还原交替涂抹的像素数组", () => {
+    const alpha = new Uint8ClampedArray([0, 0, 0, 255, 255, 0, 255, 255, 255]);
+    const compressed = compressMaskRLE(alpha);
+    expect(Array.from(compressed)).toEqual([
+      0, 3,
+      255, 2,
+      0, 1,
+      255, 3
+    ]);
+    const decompressed = decompressMaskRLE(compressed, alpha.length);
+    expect(decompressed).toEqual(alpha);
+  });
+
+  it("解压时具备健全的边界溢出截断保护", () => {
+    const alpha = new Uint8ClampedArray([255, 255, 0, 0]);
+    const compressed = compressMaskRLE(alpha);
+    // 如果还原的目标长度设为 3（小于原本长度 4），解压算法应能安全截断且不报错
+    const decompressed = decompressMaskRLE(compressed, 3);
+    expect(Array.from(decompressed)).toEqual([255, 255, 0]);
+  });
+});
+

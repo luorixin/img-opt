@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { loadImage, downscaleImageFile } from "../utils/canvasExport";
+import { loadImage, downscaleImageFile, compressAndConvertImageFile } from "../utils/canvasExport";
 import { createBlankMask, type MaskData } from "../utils/mask";
 import { flushPendingAppState, loadAppState } from "../utils/db";
 import { firstImageFile, hasDraggedFiles } from "../utils/fileSelection";
@@ -142,19 +142,32 @@ export function useImageWorkspace() {
       return;
     }
 
-    const url = URL.createObjectURL(file);
+    // 客户端高保真预压缩与转码，限制特大图像传输带宽损耗
+    let uploadFile = file;
+    const sizeMb = file.size / (1024 * 1024);
+    if (sizeMb > 10) {
+      setStatus("正在压缩大图以减少带宽...");
+      const compressed = await compressAndConvertImageFile(file, 10);
+      if (compressed.size < file.size) {
+        const afterSizeMb = compressed.size / (1024 * 1024);
+        setStatus(`已自动压缩转码大图: ${sizeMb.toFixed(1)}MB -> ${afterSizeMb.toFixed(1)}MB`);
+        uploadFile = compressed;
+      }
+    }
+
+    const url = URL.createObjectURL(uploadFile);
     try {
       const loaded = await loadImage(url);
       const MAX_DIMENSION = 2048;
 
       if (loaded.naturalWidth > MAX_DIMENSION || loaded.naturalHeight > MAX_DIMENSION) {
-        setPendingLargeImage({ file, width: loaded.naturalWidth, height: loaded.naturalHeight });
+        setPendingLargeImage({ file: uploadFile, width: loaded.naturalWidth, height: loaded.naturalHeight });
         URL.revokeObjectURL(url);
         return;
       }
 
       URL.revokeObjectURL(url);
-      await performImageUpload(file);
+      await performImageUpload(uploadFile);
     } catch (err) {
       console.error(err);
       setStatus("加载图片失败");

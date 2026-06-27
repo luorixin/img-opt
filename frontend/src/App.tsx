@@ -221,7 +221,12 @@ export default function App() {
         <div className="workspacePanel">
           <h2 className="panelTitle">Result</h2>
           <div className="resultStage sketch-box">
-            <ResultPane resultUrl={resultUrl} />
+            <ResultPane
+              originalUrl={image?.url ?? null}
+              resultUrl={resultUrl}
+              imageWidth={image?.width}
+              imageHeight={image?.height}
+            />
           </div>
         </div>
       </section>
