@@ -142,31 +142,32 @@ export function useImageWorkspace() {
       return;
     }
 
-    // 客户端高保真预压缩与转码，限制特大图像传输带宽损耗
-    let uploadFile = file;
-    const sizeMb = file.size / (1024 * 1024);
-    if (sizeMb > 10) {
-      setStatus("正在压缩大图以减少带宽...");
-      const compressed = await compressAndConvertImageFile(file, 10);
-      if (compressed.size < file.size) {
-        const afterSizeMb = compressed.size / (1024 * 1024);
-        setStatus(`已自动压缩转码大图: ${sizeMb.toFixed(1)}MB -> ${afterSizeMb.toFixed(1)}MB`);
-        uploadFile = compressed;
-      }
-    }
-
-    const url = URL.createObjectURL(uploadFile);
+    const url = URL.createObjectURL(file);
     try {
       const loaded = await loadImage(url);
       const MAX_DIMENSION = 2048;
 
       if (loaded.naturalWidth > MAX_DIMENSION || loaded.naturalHeight > MAX_DIMENSION) {
-        setPendingLargeImage({ file: uploadFile, width: loaded.naturalWidth, height: loaded.naturalHeight });
+        setPendingLargeImage({ file, width: loaded.naturalWidth, height: loaded.naturalHeight });
         URL.revokeObjectURL(url);
         return;
       }
 
       URL.revokeObjectURL(url);
+
+      // 尺寸安全后再做客户端高保真预压缩与转码，避免对超大分辨率图片创建全尺寸 Canvas。
+      let uploadFile = file;
+      const sizeMb = file.size / (1024 * 1024);
+      if (sizeMb > 10) {
+        setStatus("正在压缩大图以减少带宽...");
+        const compressed = await compressAndConvertImageFile(file, 10);
+        if (compressed.size < file.size) {
+          const afterSizeMb = compressed.size / (1024 * 1024);
+          setStatus(`已自动压缩转码大图: ${sizeMb.toFixed(1)}MB -> ${afterSizeMb.toFixed(1)}MB`);
+          uploadFile = compressed;
+        }
+      }
+
       await performImageUpload(uploadFile);
     } catch (err) {
       console.error(err);

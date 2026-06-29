@@ -389,9 +389,12 @@ export async function loadAppState(): Promise<SavedState | null> {
 
         // 兼容获取主图文件：旧版 imageFile 存在于 stateResult 内部，新版则读自独立的 imageResult
         const finalImageFile = stateResult.imageFile ?? imageResult;
+        const shouldMigrateLegacyImageFile = Boolean(stateResult.imageFile && !imageResult);
 
-        // 加载成功后立即同步内存文件缓存，避免后续无改变的重写
-        updateFileCache(finalImageFile);
+        // 加载成功后立即同步内存文件缓存，避免后续无改变的重写。
+        // 但旧版 imageFile 若只存在于 latestState 内部，下一次保存会把 latestState.imageFile 置空；
+        // 此时必须强制写入 latestImageFile，不能提前标记为已保存。
+        updateFileCache(shouldMigrateLegacyImageFile ? null : finalImageFile);
 
         const savedState: SavedState = {
           imageFile: finalImageFile,

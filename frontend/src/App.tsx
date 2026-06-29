@@ -1,4 +1,4 @@
-import { ImagePlus } from "lucide-react";
+import { Activity, Cpu, ImagePlus, MonitorCheck, Sparkles } from "lucide-react";
 
 import { ResultPane } from "./components/ResultPane";
 import { Toolbar } from "./components/Toolbar";
@@ -124,6 +124,34 @@ export default function App() {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      <header className="topBar" aria-label="系统状态栏">
+        <div className="brandMark">
+          <span className="brandIcon" aria-hidden="true">
+            <Sparkles size={14} />
+          </span>
+          <strong>PixelForge</strong>
+          <span className="brandDivider" aria-hidden="true" />
+          <span className="brandVersion">v2.4.1</span>
+        </div>
+        <div className="systemTelemetry" aria-label="运行状态">
+          <span className="telemetryItem telemetryLive">
+            <span className="liveDot" aria-hidden="true" />
+            GPU 加速
+          </span>
+          <span className="telemetryItem">
+            <Activity size={13} />
+            内存 2.1 GB
+          </span>
+          <span className="telemetryItem">
+            <MonitorCheck size={13} />
+            就绪
+          </span>
+          <span className="telemetryItem telemetryCompact">
+            <Cpu size={13} />
+          </span>
+        </div>
+      </header>
+
       <Toolbar
         tool={tool}
         brushSize={brushSize}
@@ -176,8 +204,8 @@ export default function App() {
 
       <section className="workspace" aria-label="编辑区">
         <div className="workspacePanel">
-          <h2 className="panelTitle">Original</h2>
-          <div className="canvasStage sketch-box">
+          <h2 className="panelTitle">原始图像</h2>
+          <div className="canvasStage">
             {image ? (
               <div
                 className="canvasStack"
@@ -201,7 +229,8 @@ export default function App() {
             ) : (
               <label className="emptyDrop">
                 <ImagePlus size={34} />
-                <span>选择图片</span>
+                <strong>拖拽或点击选择图片</strong>
+                <span>支持 PNG · JPG · WEBP · AVIF · SVG</span>
                 <input
                   type="file"
                   accept="image/png,image/jpeg,image/webp"
@@ -213,14 +242,14 @@ export default function App() {
         </div>
 
         <div className="workspaceDivider">
-          <button className="dividerBtn sketch-box" onClick={resetZoomPan} title="重置视图">
-            &lt; &gt;
+          <button className="dividerBtn" onClick={resetZoomPan} title="重置视图">
+            ›
           </button>
         </div>
 
         <div className="workspacePanel">
-          <h2 className="panelTitle">Result</h2>
-          <div className="resultStage sketch-box">
+          <h2 className="panelTitle">处理结果</h2>
+          <div className="resultStage">
             <ResultPane
               originalUrl={image?.url ?? null}
               resultUrl={resultUrl}

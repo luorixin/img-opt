@@ -133,10 +133,10 @@ export function Toolbar({
   return (
     <>
       <aside className="sidebar" aria-label="工具栏">
-        <h2 className="sidebarTitle">📄 工具</h2>
+        <h2 className="sidebarTitle">工具</h2>
         
-        <h3 className="sidebarSubtitle" style={{ fontSize: "14px", margin: "8px 0", opacity: 0.8 }}>⚙️ 算法模式</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "8px", marginBottom: "12px" }}>
+        <h3 className="sidebarSubtitle">算法模式</h3>
+        <div className="modeGrid">
           <button
             type="button"
             className={`modeToggleBtn sketch-box ${algoMode === "fast" ? "active" : ""}`}
@@ -153,13 +153,12 @@ export function Toolbar({
           </button>
         </div>
 
-        <h3 className="sidebarSubtitle" style={{ fontSize: "14px", margin: "8px 0", opacity: 0.8 }}>💾 导出格式</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "6px", marginBottom: "16px" }}>
+        <h3 className="sidebarSubtitle">导出格式</h3>
+        <div className="exportGrid">
           <button
             type="button"
             className={`modeToggleBtn sketch-box ${exportFormat === "WEBP" ? "active" : ""}`}
             onClick={() => onExportFormatChange("WEBP")}
-            style={{ fontSize: "12px", padding: "4px" }}
           >
             WEBP
           </button>
@@ -167,7 +166,6 @@ export function Toolbar({
             type="button"
             className={`modeToggleBtn sketch-box ${exportFormat === "PNG" ? "active" : ""}`}
             onClick={() => onExportFormatChange("PNG")}
-            style={{ fontSize: "12px", padding: "4px" }}
           >
             PNG
           </button>
@@ -175,7 +173,6 @@ export function Toolbar({
             type="button"
             className={`modeToggleBtn sketch-box ${exportFormat === "JPEG" ? "active" : ""}`}
             onClick={() => onExportFormatChange("JPEG")}
-            style={{ fontSize: "12px", padding: "4px" }}
           >
             JPEG
           </button>
@@ -252,15 +249,15 @@ export function Toolbar({
 
         <div className="iconRow">
           <IconButton title={`撤销 (当前有 ${undoLength} 步历史)`} disabled={!canUndo} onClick={onUndo}>
-            <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+            <div className="iconWithBadge">
               <Undo2 size={18} />
-              {undoLength > 0 && <span style={{ fontSize: "10px", fontWeight: "normal" }}>{undoLength}</span>}
+              {undoLength > 0 && <span className="historyBadge">{undoLength}</span>}
             </div>
           </IconButton>
           <IconButton title={`重做 (当前有 ${redoLength} 步可重做)`} disabled={!canRedo} onClick={onRedo}>
-            <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+            <div className="iconWithBadge">
               <Redo2 size={18} />
-              {redoLength > 0 && <span style={{ fontSize: "10px", fontWeight: "normal" }}>{redoLength}</span>}
+              {redoLength > 0 && <span className="historyBadge">{redoLength}</span>}
             </div>
           </IconButton>
           <IconButton title="清空 Mask" disabled={!hasImage} onClick={onClearMask}>
@@ -287,13 +284,12 @@ export function Toolbar({
         </button>
 
         <button
-          className="secondaryButton sketch-box"
+          className="secondaryButton shortcutButton sketch-box"
           type="button"
           onClick={() => setIsShortcutOpen(true)}
-          style={{ borderStyle: "dashed", color: "#526167", background: "#fbfcfc" }}
           title="键盘快捷键一览"
         >
-          <span>⌨️ 快捷键说明</span>
+          <span>快捷键说明</span>
         </button>
 
         <div className="statusLine">
@@ -353,7 +349,7 @@ export function Toolbar({
         </div>
 
         <div className="bottomRow">
-          <label className="textControl sketch-box">
+          <label className="textControl promptShell sketch-box">
             <input
               className="promptInput"
               type="text"

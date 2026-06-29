@@ -1,0 +1,24 @@
+services:
+  frontend-dev:
+    image: node:24-alpine
+    working_dir: /app
+    command: >
+      sh -c "test -x node_modules/.bin/vite || npm ci
+      && npm run dev -- --host 0.0.0.0 --port 5173"
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://127.0.0.1:8000}
+      CHOKIDAR_USEPOLLING: ${CHOKIDAR_USEPOLLING:-true}
+      WATCHPACK_POLLING: ${WATCHPACK_POLLING:-true}
+    ports:
+      - "5173:5173"
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      # 中文注释：把宿主机前端源码挂入容器，Vite 才能监听文件改动并触发 HMR。
+      - ./frontend:/app
+      # 中文注释：node_modules 使用容器内 volume，避免 macOS/Alpine 依赖产物互相污染。
+      - frontend-dev-node-modules:/app/node_modules
+
+volumes:
+  frontend-dev-node-modules:

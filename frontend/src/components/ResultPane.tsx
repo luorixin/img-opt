@@ -13,17 +13,43 @@ type ResultPaneProps = {
   imageHeight?: number;
 };
 
+export function canUseComparisonSlider(
+  originalWidth?: number,
+  originalHeight?: number,
+  resultWidth?: number,
+  resultHeight?: number,
+): boolean {
+  return Boolean(
+    originalWidth &&
+      originalHeight &&
+      resultWidth &&
+      resultHeight &&
+      originalWidth === resultWidth &&
+      originalHeight === resultHeight,
+  );
+}
+
 export function ResultPane({ originalUrl, resultUrl, imageWidth, imageHeight }: ResultPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [sliderX, setSliderX] = useState(50);
   const [isDragging, setIsDragging] = useState(false);
+  const [resultSize, setResultSize] = useState<{ width: number; height: number } | null>(null);
 
   // 如果结果图 URL 改变，重置滑动条至中间 (50%)
   useEffect(() => {
     if (resultUrl) {
       setSliderX(50);
+      setResultSize(null);
     }
   }, [resultUrl]);
+
+  const handleResultLoad = (event: React.SyntheticEvent<HTMLImageElement>) => {
+    const loaded = event.currentTarget;
+    setResultSize({
+      width: loaded.naturalWidth,
+      height: loaded.naturalHeight,
+    });
+  };
 
   if (!resultUrl) {
     return (
@@ -37,7 +63,22 @@ export function ResultPane({ originalUrl, resultUrl, imageWidth, imageHeight }: 
   if (!originalUrl) {
     return (
       <div className="resultPane">
-        <img src={resultUrl} alt="修复结果" />
+        <img src={resultUrl} alt="修复结果" onLoad={handleResultLoad} />
+      </div>
+    );
+  }
+
+  const canCompare = canUseComparisonSlider(
+    imageWidth,
+    imageHeight,
+    resultSize?.width,
+    resultSize?.height,
+  );
+
+  if (!canCompare) {
+    return (
+      <div className="resultPane">
+        <img src={resultUrl} alt="修复结果" onLoad={handleResultLoad} />
       </div>
     );
   }
@@ -57,7 +98,13 @@ export function ResultPane({ originalUrl, resultUrl, imageWidth, imageHeight }: 
 
   // 指针抬起：释放捕捉并结束拖动
   const handlePointerUp = (e: React.PointerEvent) => {
-    e.currentTarget.releasePointerCapture(e.pointerId);
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    setIsDragging(false);
+  };
+
+  const handlePointerCancel = () => {
     setIsDragging(false);
   };
 
@@ -84,6 +131,8 @@ export function ResultPane({ originalUrl, resultUrl, imageWidth, imageHeight }: 
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        onLostPointerCapture={handlePointerCancel}
       >
         {/* 底层图片：原始图像 */}
         <img
@@ -101,6 +150,7 @@ export function ResultPane({ originalUrl, resultUrl, imageWidth, imageHeight }: 
           className="sliderImageAfter"
           style={{ clipPath: `inset(0 0 0 ${sliderX}%)` }}
           draggable={false}
+          onLoad={handleResultLoad}
         />
         <div className="sliderLabel sliderLabelAfter">效果图</div>
 

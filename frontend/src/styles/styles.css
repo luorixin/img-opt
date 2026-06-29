@@ -1,9 +1,25 @@
 :root {
-  color: #2c2c2c;
-  background: #fdfaf6; /* Light paper color */
+  --page: #020816;
+  --page-2: #07111f;
+  --panel: rgb(13 21 38 / 82%);
+  --panel-solid: #0d1526;
+  --panel-soft: #09111f;
+  --border: rgb(0 212 255 / 10%);
+  --border-strong: rgb(0 212 255 / 24%);
+  --text: #d8e6f8;
+  --text-soft: #90a1b9;
+  --text-dim: #626f86;
+  --accent: #00d4ff;
+  --accent-2: #008cff;
+  --accent-glow: rgb(0 212 255 / 35%);
+  --danger: #ff5f7a;
+  --radius-panel: 11px;
+  --radius-control: 7px;
+  color: var(--text);
+  background: var(--page);
   font-family:
-    "Caveat", "Klee One", "Comic Sans MS", cursive,
-    Inter, ui-sans-serif, system-ui, sans-serif;
+    Menlo, Monaco, Consolas, "SFMono-Regular", ui-monospace, "Cascadia Mono",
+    "Microsoft YaHei", monospace;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -16,7 +32,17 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  /* subtle paper noise can be added here, we use color for now */
+  overflow: hidden;
+  /* 中文注释：深色径向光斑对应 Figma 背景里的蓝色科技感柔光。 */
+  background:
+    radial-gradient(circle at 8% 0%, rgb(0 140 255 / 16%), transparent 28%),
+    radial-gradient(circle at 78% 42%, rgb(0 212 255 / 10%), transparent 34%),
+    linear-gradient(135deg, #020713 0%, #05101e 48%, #020714 100%);
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
 }
 
 button,
@@ -27,67 +53,195 @@ a {
 
 .appShell {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) auto; /* auto for bottom bar if we make it a grid */
-  min-height: 100vh;
-  color: #2c2c2c;
-  background: #fdfaf6;
+  grid-template-columns: clamp(182px, 15vw, 260px) minmax(0, 1fr);
+  grid-template-rows: 38px minmax(0, 1fr) 79px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+  color: var(--text);
+  background:
+    radial-gradient(circle at -3% -10%, rgb(0 140 255 / 16%) 0 160px, transparent 310px),
+    radial-gradient(circle at 98% 58%, rgb(0 212 255 / 10%) 0 210px, transparent 410px),
+    var(--page);
+}
+
+.topBar {
+  grid-column: 1 / 3;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: rgb(3 9 19 / 88%);
+}
+
+.brandMark,
+.systemTelemetry,
+.telemetryItem {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.brandMark {
+  gap: 9px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.brandIcon {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--accent-2), var(--accent));
+  box-shadow: 0 0 18px rgb(0 212 255 / 28%);
+}
+
+.brandDivider {
+  width: 1px;
+  height: 14px;
+  background: #314158;
+}
+
+.brandVersion,
+.telemetryItem {
+  color: var(--text-soft);
+  font-size: 11px;
+}
+
+.systemTelemetry {
+  gap: 18px;
+  justify-content: flex-end;
+}
+
+.telemetryItem {
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.telemetryLive {
+  color: var(--accent);
+}
+
+.liveDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+
+.telemetryCompact {
+  display: none;
 }
 
 .sidebar {
   grid-column: 1 / 2;
-  grid-row: 1 / 3;
+  grid-row: 2 / 3;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   min-width: 0;
-  padding: 18px;
-  border-right: 2px solid #333;
-  border-radius: 2px 255px 3px 25px / 255px 5px 225px 3px;
-  background: #f9f7f1;
+  min-height: 0;
+  padding: 10px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  background: rgb(5 12 24 / 62%);
+  scrollbar-width: thin;
+  scrollbar-color: rgb(0 212 255 / 26%) transparent;
 }
 
-/* Base style for sketchy items */
+/* 中文注释：保留原有 class 名作为兼容层，但视觉改为 Figma 的暗色科技卡片。 */
 .sketch-box {
-  border: 2px solid #333;
-  border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;
-  background: #fff;
-  box-shadow: 2px 3px 0px rgba(0,0,0,0.1);
-  transition: all 0.1s;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--panel);
+  box-shadow: none;
+  transition: border-color 0.12s ease, background-color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .bottomBar {
   grid-column: 2 / 3;
-  grid-row: 2 / 3;
+  grid-row: 3;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 16px;
-  background: transparent;
+  justify-content: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  background: rgb(3 9 19 / 78%);
 }
 
 .bottomRow {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 12px;
+  gap: 8px;
+  width: min(1004px, 100%);
 }
 
 .promptInput {
   border: none;
   background: transparent;
-  width: 200px;
-  padding: 0 10px;
+  width: 250px;
+  min-height: 24px;
+  padding: 0 8px;
+  color: var(--text);
   font-family: inherit;
+  font-size: 11px;
   outline: none;
 }
 
 .sidebarTitle {
-  font-size: 24px;
-  margin: 0 0 10px 0;
-  color: #333;
-  text-align: center;
+  display: none;
+}
+
+.sidebarSubtitle {
+  position: relative;
+  margin: 0;
+  padding: 11px 11px 0;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.sidebarSubtitle::before {
+  content: "";
+  display: inline-block;
+  width: 3.5px;
+  height: 12px;
+  margin-right: 7px;
+  border-radius: 99px;
+  vertical-align: -2px;
+  background: linear-gradient(180deg, var(--accent-2), var(--accent));
+}
+
+.modeGrid,
+.exportGrid {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  margin: 0 11px 11px;
+}
+
+.modeGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.exportGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .uploadButton,
@@ -99,17 +253,17 @@ a {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 42px;
-  border: 2px solid #333;
-  border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;
-  color: #2c2c2c;
-  background: #fff;
-  box-shadow: 2px 3px 0px rgba(0,0,0,0.15);
+  min-height: 29px;
+  border: 1px solid rgb(49 65 88 / 70%);
+  border-radius: var(--radius-control);
+  color: var(--text-soft);
+  background: rgb(8 15 28 / 62%);
+  box-shadow: none;
   text-decoration: none;
   cursor: pointer;
-  font-weight: bold;
-  font-size: 16px;
-  letter-spacing: 1px;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0;
 }
 
 .uploadButton:hover,
@@ -117,8 +271,9 @@ a {
 .secondaryButton:hover,
 .downloadButton:hover,
 .iconButton:hover {
-  transform: translateY(1px);
-  box-shadow: 1px 1px 0px rgba(0,0,0,0.15);
+  border-color: var(--accent);
+  color: var(--text);
+  box-shadow: 0 0 16px rgb(0 212 255 / 16%);
 }
 
 .uploadButton input,
@@ -130,16 +285,19 @@ a {
 .segmented,
 .iconRow {
   display: grid;
+  width: 100%;
   min-width: 0;
-  gap: 8px;
+  gap: 6px;
 }
 
 .segmented {
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0 11px;
 }
 
 .iconRow {
   grid-template-columns: repeat(4, 1fr);
+  margin: 0 11px;
 }
 
 .iconButton {
@@ -148,18 +306,19 @@ a {
   justify-content: center;
   width: 100%;
   min-width: 0;
-  height: 38px;
-  border: 1px solid #c5cfcc;
-  border-radius: 8px;
-  color: #334148;
-  background: #ffffff;
+  height: 29px;
+  border: 1px solid rgb(49 65 88 / 70%);
+  border-radius: var(--radius-control);
+  color: var(--text-soft);
+  background: rgb(8 15 28 / 62%);
   cursor: pointer;
 }
 
 .iconButton.active {
-  border-color: #11835f;
-  color: #064d39;
-  background: #dff4eb;
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgb(0 212 255 / 10%);
+  box-shadow: 0 0 16px rgb(0 212 255 / 18%);
 }
 
 .iconButton:disabled,
@@ -167,41 +326,45 @@ a {
 .secondaryButton:disabled,
 .batchButton.disabled,
 .downloadButton.disabled {
-  color: #98a4a2;
-  background: #eef2f1;
+  color: #49576b;
+  background: rgb(8 15 28 / 42%);
   cursor: not-allowed;
   pointer-events: none;
 }
 
 .control {
   display: grid;
-  gap: 8px;
-  color: #435057;
-  font-size: 13px;
+  width: 100%;
+  min-width: 0;
+  gap: 7px;
+  margin: 0 11px;
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .textControl {
   display: grid;
   gap: 8px;
-  color: #435057;
-  font-size: 13px;
+  color: var(--text-soft);
+  font-size: 11px;
 }
 
 .textControl textarea {
   width: 100%;
   min-height: 72px;
   resize: vertical;
-  border: 1px solid #c5cfcc;
-  border-radius: 8px;
+  border: 1px solid rgb(49 65 88 / 70%);
+  border-radius: var(--radius-control);
   padding: 9px 10px;
-  color: #1d252c;
-  background: #ffffff;
+  color: var(--text);
+  background: rgb(8 15 28 / 72%);
   line-height: 1.4;
 }
 
 .textControl textarea:focus {
-  border-color: #11835f;
-  outline: 2px solid rgb(17 131 95 / 16%);
+  border-color: var(--accent);
+  outline: 2px solid rgb(0 212 255 / 16%);
 }
 
 .control span {
@@ -212,25 +375,27 @@ a {
 
 .control strong {
   min-width: 32px;
-  color: #1d252c;
+  color: var(--accent);
   text-align: right;
 }
 
 .control input {
   width: 100%;
-  accent-color: #11835f;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 .primaryButton {
-  border-color: #11835f;
+  border-color: transparent;
   color: #ffffff;
-  background: #11835f;
+  background: linear-gradient(135deg, var(--accent-2), var(--accent));
+  box-shadow: 0 0 18px rgb(0 212 255 / 26%);
 }
 
 .secondaryButton {
-  border-color: #6b5fbd;
-  color: #2f2a68;
-  background: #eeecfb;
+  border-color: rgb(49 65 88 / 70%);
+  color: var(--text-soft);
+  background: rgb(8 15 28 / 62%);
 }
 
 .downloadButton {
@@ -241,30 +406,29 @@ a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 6px;
-  min-height: 38px;
+  padding: 5px 6px;
+  min-height: 29px;
   cursor: pointer;
   font-weight: bold;
-  font-size: 14px;
-  letter-spacing: 1px;
+  font-size: 11px;
+  letter-spacing: 0;
 }
 
 .modeToggleBtn.active {
-  border-color: #11835f;
-  color: #ffffff;
-  background: #11835f;
+  border-color: var(--accent);
+  color: #00121d;
+  background: linear-gradient(135deg, var(--accent-2), var(--accent));
+  box-shadow: 0 0 16px rgb(0 212 255 / 22%);
 }
 
 .modeToggleBtn:not(.active) {
-  border-color: #333333;
-  color: #526167;
-  background: #ffffff;
+  border-color: rgb(49 65 88 / 70%);
+  color: var(--text-soft);
+  background: rgb(8 15 28 / 62%);
 }
 
 .modeToggleBtn:not(.active):hover {
-  background: #f8f9fa;
-  transform: translateY(1px);
-  box-shadow: 1px 1px 0px rgba(0,0,0,0.15);
+  background: rgb(0 212 255 / 8%);
 }
 
 .statusLine {
@@ -274,8 +438,29 @@ a {
   gap: 8px;
   min-height: 38px;
   margin-top: auto;
-  color: #526167;
-  font-size: 13px;
+  margin: 0 11px;
+  color: var(--text-soft);
+  font-size: 11px;
+}
+
+.iconWithBadge {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.historyBadge {
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.shortcutButton {
+  color: var(--text-soft);
+  background: rgb(8 15 28 / 62%);
+}
+
+.promptShell {
+  min-height: 34px;
 }
 
 .statusLine span {
@@ -290,12 +475,13 @@ a {
 
 .workspace {
   grid-column: 2 / 3;
-  grid-row: 1 / 2;
+  grid-row: 2 / 3;
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  gap: 10px;
+  grid-template-columns: minmax(320px, 1fr) 28px minmax(320px, 1fr);
+  gap: clamp(14px, 2vw, 28px);
   min-width: 0;
-  padding: 24px;
+  min-height: 0;
+  padding: 0 14px 14px;
   background: transparent;
 }
 
@@ -303,36 +489,59 @@ a {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: 100%;
+  min-height: 0;
 }
 
 .panelTitle {
-  font-family: "Caveat", cursive, sans-serif;
-  font-size: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 35px;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1;
   text-align: center;
-  margin: 0 0 10px 0;
-  color: #2c2c2c;
-  font-weight: 600;
+  margin: 0;
+  color: var(--text-soft);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.panelTitle::before {
+  content: "";
+  width: 3.5px;
+  height: 3.5px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
 }
 
 .workspaceDivider {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-top: 50px;
+  margin-top: 35px;
 }
 
 .dividerBtn {
-  font-family: "Caveat", cursive, sans-serif;
-  font-size: 20px;
+  font-family: inherit;
+  font-size: 18px;
   font-weight: bold;
   cursor: pointer;
-  padding: 8px 14px;
-  background: #fdfaf6;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--accent);
+  background: rgb(0 212 255 / 8%);
+  box-shadow: 0 0 16px rgb(0 212 255 / 18%);
 }
 
 .dividerBtn:hover {
-  transform: scale(1.05);
+  border-color: var(--accent);
+  box-shadow: 0 0 18px rgb(0 212 255 / 28%);
 }
 
 .canvasStage,
@@ -341,8 +550,9 @@ a {
   display: grid;
   place-items: center;
   min-width: 0;
+  min-height: 0;
   flex-grow: 1;
-  background: #fff;
+  background: var(--panel-soft);
 }
 
 .resultPane {
@@ -353,30 +563,33 @@ a {
 .canvasStage {
   position: relative;
   overflow: hidden;
-  padding: 20px;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: inset 0 0 60px rgb(0 0 0 / 30%);
 }
 
 .canvasStack {
-  border: 2px solid #333;
-  border-radius: 2px 255px 3px 25px / 255px 5px 225px 3px;
-  box-shadow: 2px 3px 0px rgba(0,0,0,0.1);
-  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: inset 0 0 60px rgb(0 0 0 / 24%);
+  background: rgb(4 11 21 / 92%);
 }
 
 .resultPane img {
-  border: 2px solid #333;
-  border-radius: 255px 5px 225px 3px / 2px 255px 3px 25px;
-  box-shadow: 2px 3px 0px rgba(0,0,0,0.1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: inset 0 0 60px rgb(0 0 0 / 24%);
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  background: #fff;
+  background: rgb(4 11 21 / 92%);
 }
 
 .appShell.dragging .canvasStage {
-  outline: 3px dashed #11835f;
+  outline: 3px dashed var(--accent);
   outline-offset: -14px;
-  background: #dff4eb;
+  background: rgb(0 212 255 / 8%);
 }
 
 .appShell.dragging .canvasStage::after {
@@ -388,19 +601,19 @@ a {
   transform: translateX(-50%);
   padding: 8px 12px;
   border-radius: 8px;
-  color: #064d39;
-  background: #ffffff;
-  box-shadow: 0 10px 30px rgb(37 48 54 / 16%);
+  color: var(--accent);
+  background: var(--panel-solid);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 28%);
   font-size: 13px;
   pointer-events: none;
 }
 
 .canvasStack {
   position: relative;
-  width: min(100%, 1120px);
-  max-height: calc(100vh - 48px);
-  background: #ffffff;
-  box-shadow: 0 18px 50px rgb(37 48 54 / 16%);
+  width: min(100%, 920px);
+  max-height: calc(100vh - 174px);
+  background: rgb(4 11 21 / 92%);
+  box-shadow: none;
 }
 
 .paintCanvas,
@@ -417,24 +630,49 @@ a {
 }
 
 .emptyDrop {
-  width: min(520px, 100%);
-  min-height: 240px;
+  width: min(250px, 100%);
+  min-height: 156px;
   flex-direction: column;
-  border-style: dashed;
-  color: #526167;
-  background: #ffffff;
+  gap: 10px;
+  border: 0;
+  color: var(--text-soft);
+  background: transparent;
+  box-shadow: none;
+}
+
+.emptyDrop svg {
+  width: 56px;
+  height: 56px;
+  padding: 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  color: var(--accent);
+  background: rgb(0 212 255 / 8%);
+}
+
+.emptyDrop strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.emptyDrop span {
+  color: var(--text-dim);
+  font-size: 11px;
 }
 
 .resultPane {
-  background: #f8faf9;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel-soft);
+  box-shadow: inset 0 0 60px rgb(0 0 0 / 30%);
 }
 
 .resultPane img {
   display: block;
-  width: min(100%, 720px);
-  max-height: calc(100vh - 48px);
+  width: min(100%, 920px);
+  max-height: calc(100vh - 174px);
   object-fit: contain;
-  box-shadow: 0 18px 50px rgb(37 48 54 / 14%);
+  box-shadow: none;
 }
 
 .resultEmpty {
@@ -442,10 +680,10 @@ a {
   place-items: center;
   width: min(100%, 420px);
   min-height: 220px;
-  border: 1px dashed #c2ceca;
+  border: 0;
   border-radius: 8px;
-  color: #6d7a7f;
-  background: #ffffff;
+  color: var(--text-dim);
+  background: transparent;
 }
 
 .spin {
@@ -458,51 +696,194 @@ a {
   }
 }
 
-@media (max-width: 860px) {
+/* 中文注释：小屏和平板优先展示画布，把参数面板放到编辑区下方，避免首屏被侧栏挤满。 */
+@media (max-width: 1024px) {
+  body {
+    display: block;
+    overflow: auto;
+  }
+
+  #root {
+    width: 100%;
+    height: auto;
+    min-height: 100vh;
+  }
+
   .appShell {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    min-height: 100vh;
+    max-height: none;
+    overflow: visible;
   }
 
-  .toolbar {
-    position: sticky;
-    top: 0;
-    z-index: 2;
+  .topBar {
+    grid-column: 1;
+    grid-row: 1;
+    gap: 12px;
+  }
+
+  .systemTelemetry {
+    gap: 8px;
+  }
+
+  .systemTelemetry .telemetryItem:not(.telemetryLive):not(.telemetryCompact) {
+    display: none;
+  }
+
+  .telemetryCompact {
+    display: inline-flex;
+  }
+
+  .sidebar {
+    position: static;
+    grid-column: 1;
+    grid-row: 3;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 8px;
+    max-height: none;
+    padding: 10px;
     border-right: 0;
-    border-bottom: 1px solid #d8dfdf;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
   }
 
-  .toolbar > * {
+  .sidebar > * {
     min-width: 0;
   }
 
-  .uploadButton,
+  .modeGrid,
+  .exportGrid,
   .segmented,
-  .textControl,
+  .iconRow,
+  .control,
+  .secondaryButton,
+  .statusLine {
+    margin-right: 0;
+    margin-left: 0;
+  }
+
+  .sidebarSubtitle,
+  .modeGrid,
+  .exportGrid,
+  .segmented,
+  .iconRow,
   .statusLine {
     grid-column: 1 / -1;
   }
 
+  .sidebarSubtitle {
+    padding: 6px 0 0;
+  }
+
+  .control,
+  .secondaryButton {
+    min-width: 0;
+  }
+
+  .sidebar > .secondaryButton {
+    width: 100%;
+  }
+
   .workspace {
     grid-template-columns: 1fr;
+    grid-column: 1;
+    grid-row: 2;
+    padding: 14px;
+    gap: 12px;
+  }
+
+  .workspaceDivider {
+    display: none;
+  }
+
+  .bottomBar {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    grid-column: 1;
+    grid-row: 4;
+    align-items: stretch;
+    padding: 8px 10px;
+    background: rgb(3 9 19 / 92%);
+  }
+
+  .bottomRow {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: thin;
+  }
+
+  .bottomRow > * {
+    flex: 0 0 auto;
+  }
+
+  .promptShell {
+    flex: 0 0 min(280px, 76vw);
+  }
+
+  .promptInput {
+    width: 100%;
   }
 
   .canvasStage,
   .resultPane {
     min-height: auto;
-    padding: 14px;
+    padding: 10px;
   }
 
   .canvasStack,
   .resultPane img {
-    max-height: 72vh;
+    max-height: 58vh;
+  }
+}
+
+@media (min-width: 1500px) {
+  .workspace {
+    grid-template-columns: minmax(420px, 1fr) 32px minmax(420px, 1fr);
+  }
+
+  .canvasStage,
+  .resultPane {
+    border-radius: 16px;
   }
 }
 
 @media (max-width: 520px) {
-  .toolbar {
+  .topBar {
+    padding: 0 10px;
+  }
+
+  .brandMark {
+    gap: 7px;
+    font-size: 12px;
+  }
+
+  .brandDivider,
+  .brandVersion {
+    display: none;
+  }
+
+  .telemetryLive {
+    max-width: 34px;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .sidebar {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .modeGrid,
+  .exportGrid,
+  .segmented,
+  .iconRow {
+    grid-column: 1;
   }
 
   .segmented {
@@ -515,6 +896,22 @@ a {
   .statusLine {
     grid-column: 1;
   }
+
+  .workspace {
+    padding: 10px;
+  }
+
+  .panelTitle {
+    min-height: 28px;
+  }
+
+  .emptyDrop {
+    min-height: 140px;
+  }
+
+  .bottomBar {
+    gap: 6px;
+  }
 }
 
 /* Modal Styles */
@@ -525,15 +922,16 @@ a {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(12, 13, 18, 0.4);
+  background: rgb(1 6 14 / 72%);
   backdrop-filter: blur(4px);
 }
 
 .modalContent {
   width: min(90%, 420px);
-  background: #ffffff;
+  border: 1px solid var(--border-strong);
+  background: var(--panel-solid);
   border-radius: 12px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 45%);
   overflow: hidden;
   animation: modalFadeIn 0.2s ease-out;
 }
@@ -551,18 +949,18 @@ a {
 
 .modalHeader {
   padding: 16px 24px;
-  border-bottom: 1px solid #eef3f1;
+  border-bottom: 1px solid var(--border);
 }
 
 .modalHeader h3 {
   margin: 0;
   font-size: 16px;
-  color: #1d252c;
+  color: var(--text);
 }
 
 .modalBody {
   padding: 24px;
-  color: #526167;
+  color: var(--text-soft);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -572,8 +970,8 @@ a {
   justify-content: flex-end;
   gap: 12px;
   padding: 16px 24px;
-  background: #fbfcfb;
-  border-top: 1px solid #eef3f1;
+  background: rgb(8 15 28 / 68%);
+  border-top: 1px solid var(--border);
 }
 
 /* Progress Styles */
@@ -588,7 +986,7 @@ a {
   justify-content: space-between;
   align-items: center;
   font-size: 14px;
-  color: #435057;
+  color: var(--text-soft);
 }
 
 .progressLabel {
@@ -599,19 +997,19 @@ a {
 
 .progressPercentage {
   font-weight: bold;
-  color: #11835f;
+  color: var(--accent);
 }
 
 .progressBarTrack {
   height: 8px;
-  background: #eef3f1;
+  background: rgb(49 65 88 / 36%);
   border-radius: 4px;
   overflow: hidden;
 }
 
 .progressBarFill {
   height: 100%;
-  background: #11835f;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent));
   border-radius: 4px;
   transition: width 0.3s ease-out;
 }
@@ -623,11 +1021,12 @@ a {
   max-width: 100%;
   max-height: 100%;
   overflow: hidden;
-  border: 2px solid #333;
-  border-radius: 2px 255px 3px 25px / 255px 5px 225px 3px;
-  box-shadow: 2px 3px 0px rgba(0, 0, 0, 0.1);
-  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: inset 0 0 60px rgb(0 0 0 / 30%);
+  background: var(--panel-soft);
   user-select: none;
+  touch-action: none;
 }
 
 .sliderImageBefore {
@@ -653,7 +1052,7 @@ a {
   top: 0;
   bottom: 0;
   width: 2px;
-  background-color: #11835f;
+  background-color: var(--accent);
   cursor: ew-resize;
   z-index: 10;
   pointer-events: none;
@@ -665,15 +1064,15 @@ a {
   transform: translate(-50%, -50%);
   width: 34px;
   height: 34px;
-  background-color: #11835f;
-  border: 2px solid #333;
+  background-color: var(--accent);
+  border: 1px solid rgb(255 255 255 / 60%);
   border-radius: 50%;
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: ew-resize;
-  box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 0 18px var(--accent-glow);
   z-index: 11;
   font-size: 15px;
   font-weight: bold;
@@ -684,27 +1083,27 @@ a {
 
 .sliderHandle:hover {
   transform: translate(-50%, -50%) scale(1.1);
-  background-color: #0f7353;
+  background-color: #27dcff;
 }
 
 .sliderHandle:active {
   transform: translate(-50%, -50%) scale(0.95);
-  background-color: #0d6347;
+  background-color: #00a7d4;
 }
 
 .sliderLabel {
   position: absolute;
   top: 10px;
   padding: 4px 10px;
-  background: rgba(17, 131, 95, 0.85);
-  color: #fff;
-  border: 1px solid #333;
-  border-radius: 2px 10px 3px 8px / 12px 3px 15px 4px;
+  background: rgb(0 212 255 / 16%);
+  color: var(--accent);
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
   font-size: 11px;
   pointer-events: none;
   z-index: 5;
   font-weight: bold;
-  box-shadow: 1px 1px 0px rgba(0,0,0,0.15);
+  box-shadow: 0 0 16px rgb(0 212 255 / 12%);
 }
 
 .sliderLabelBefore {
@@ -713,7 +1112,6 @@ a {
 
 .sliderLabelAfter {
   right: 10px;
-  background: rgba(235, 104, 76, 0.85); /* 结果图标签采用橙红色系以示区别 */
+  background: rgb(255 95 122 / 16%); /* 结果图标签采用强调色区分处理后图层。 */
+  color: var(--danger);
 }
-
-

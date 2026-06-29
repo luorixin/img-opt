@@ -5,6 +5,8 @@ import { calculateCropOutputSize, type CropRect } from "./crop";
 
 export type ExportImageFormat = "PNG" | "WEBP" | "JPEG";
 
+const MAX_CLIENT_TRANSCODE_PIXELS = 25_000_000;
+
 export function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image();
@@ -75,6 +77,12 @@ export async function compressAndConvertImageFile(file: File, maxSizeMb: number 
   const url = URL.createObjectURL(file);
   try {
     const image = await loadImage(url);
+    // 超大分辨率图片即使文件体积可控，全尺寸 Canvas 转码也可能瞬间占用数百 MB 内存。
+    // 此类图片交给上传流程的尺寸检查/降采样确认处理，不在这里创建原尺寸画布。
+    if (image.naturalWidth * image.naturalHeight > MAX_CLIENT_TRANSCODE_PIXELS) {
+      return file;
+    }
+
     const canvas = document.createElement("canvas");
     canvas.width = image.naturalWidth;
     canvas.height = image.naturalHeight;

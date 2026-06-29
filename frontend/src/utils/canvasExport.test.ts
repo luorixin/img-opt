@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  compressAndConvertImageFile,
   cropAndEnhanceImageBlob,
   imageToEnhancedResolutionBlob,
   imageToTransparentBackgroundBlob,
@@ -94,5 +95,30 @@ describe("canvasExport formats", () => {
 
     expect(blob.type).toBe("image/webp");
     expect(toBlobTypes).toEqual(["image/webp"]);
+  });
+});
+
+describe("compressAndConvertImageFile safety", () => {
+  it("does not allocate a full-size canvas for images above the safe pixel limit", async () => {
+    const file = new File(["oversized"], "huge.png", { type: "image/png" });
+    const createElement = vi.fn();
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:huge");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    vi.stubGlobal("document", { createElement });
+    vi.stubGlobal("Image", class {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      naturalWidth = 12_000;
+      naturalHeight = 12_000;
+
+      set src(_value: string) {
+        queueMicrotask(() => this.onload?.());
+      }
+    });
+
+    const result = await compressAndConvertImageFile(file, 0.000001);
+
+    expect(result).toBe(file);
+    expect(createElement).not.toHaveBeenCalled();
   });
 });

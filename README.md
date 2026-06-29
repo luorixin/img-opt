@@ -18,6 +18,27 @@ docker compose up --build
 
 打开 `http://127.0.0.1:5173`。后端在 `http://127.0.0.1:8000`。
 
+### Docker 前端热更新
+
+默认 `frontend` 服务是 nginx 静态产物，适合验收和生产预览，不会随源码改动热更新。开发前端时使用 dev 覆盖文件里的 `frontend-dev` 服务运行 Vite dev server：
+
+```bash
+docker compose stop frontend
+docker compose -f compose.yaml -f compose.dev.yaml up --no-deps frontend-dev
+```
+
+`compose.dev.yaml` 会把 `./frontend` 挂载到容器 `/app`，并把 `node_modules` 放到独立 Docker volume。保存 `frontend/src/**` 后，浏览器里的 `http://127.0.0.1:5173` 会通过 Vite HMR 自动刷新局部模块。如果 Docker Desktop 文件事件不稳定，可保留默认的 `CHOKIDAR_USEPOLLING=true`，或临时关闭轮询：
+
+启动命令会在 `node_modules/.bin/vite` 不存在时自动执行 `npm ci`。如果依赖 volume 曾经损坏，可重置一次：
+
+```bash
+docker volume rm img-opt_frontend-dev-node-modules
+```
+
+```bash
+CHOKIDAR_USEPOLLING=false docker compose -f compose.yaml -f compose.dev.yaml up frontend-dev
+```
+
 同时启动 IOPaint/LaMa CPU 侧车：
 
 ```bash

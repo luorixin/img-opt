@@ -1,6 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DebouncedSaveQueue, compressMaskRLE, decompressMaskRLE } from "./db";
+import { DebouncedSaveQueue, compressMaskRLE, decompressMaskRLE, loadAppState, saveAppState } from "./db";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 
 describe("DebouncedSaveQueue", () => {
   it("serializes overlapping writes", async () => {
@@ -102,3 +108,96 @@ describe("Mask RLE 游程编码压缩算法", () => {
   });
 });
 
+describe("IndexedDB 工作区迁移", () => {
+  it("旧版内嵌 imageFile 加载后首次保存会写入独立图片槽", async () => {
+    const legacyFile = new File(["legacy-image"], "legacy.png", {
+      type: "image/png",
+      lastModified: 123,
+    });
+    const records = new Map<string, unknown>([
+      [
+        "latestState",
+        {
+          imageFile: legacyFile,
+          mask: null,
+          cropRects: [],
+          settings: {
+            brushSize: 24,
+            maskDilate: 4,
+            maskBlur: 2,
+            backgroundTolerance: 18,
+            upscaleFactor: 2,
+            tool: "rectangle",
+          },
+        },
+      ],
+    ]);
+    installFakeIndexedDB(records);
+
+    const loaded = await loadAppState();
+    expect(loaded?.imageFile).toBe(legacyFile);
+
+    await saveAppState(legacyFile, null, [], loaded!.settings);
+
+    expect(records.get("latestImageFile")).toBe(legacyFile);
+    expect((records.get("latestState") as { imageFile: File | null }).imageFile).toBeNull();
+  });
+});
+
+function installFakeIndexedDB(records: Map<string, unknown>) {
+  const database: any = {
+    objectStoreNames: {
+      contains: () => true,
+    },
+    createObjectStore: vi.fn(),
+    close: vi.fn(),
+    transaction: vi.fn((_storeName: string, _mode: IDBTransactionMode) => createTransaction(records)),
+  };
+
+  vi.stubGlobal("indexedDB", {
+    open: vi.fn(() => {
+      const request: any = {
+        result: database as unknown as IDBDatabase,
+        error: null,
+      };
+      queueMicrotask(() => request.onsuccess?.({} as Event));
+      return request;
+    }),
+  });
+}
+
+function createTransaction(records: Map<string, unknown>) {
+  let pendingOperations = 0;
+  const transaction: any = {
+    error: null,
+    objectStore: vi.fn(() => ({
+      get: (key: string) => scheduleRequest(() => records.get(key)),
+      put: (value: unknown, key: string) => scheduleRequest(() => {
+        records.set(key, value);
+        return key;
+      }),
+      delete: (key: string) => scheduleRequest(() => {
+        records.delete(key);
+        return undefined;
+      }),
+    })),
+  };
+
+  function scheduleRequest(readValue: () => unknown) {
+    pendingOperations += 1;
+    const request: any = {
+      error: null,
+    };
+    queueMicrotask(() => {
+      request.result = readValue();
+      request.onsuccess?.({} as Event);
+      pendingOperations -= 1;
+      if (pendingOperations === 0) {
+        transaction.oncomplete?.({} as Event);
+      }
+    });
+    return request;
+  }
+
+  return transaction as IDBTransaction;
+}
