@@ -13,6 +13,7 @@ import {
   Crop,
   Loader2,
   Images,
+  ListChecks,
   Maximize2,
   MousePointer2,
   Redo2,
@@ -71,7 +72,10 @@ type ToolbarProps = {
   onCropAndDownload: () => void;
   onPromptInpaint: () => void;
   canCancelTask: boolean;
+  activeTaskCount: number;
+  taskRecordCount: number;
   onCancelTask: () => void;
+  onOpenTaskCenter: () => void;
   onBatchImagesSelected: (operation: BatchImageOperation, files: FileList | null) => void;
   zoom: number;
   onResetZoomPan: () => void;
@@ -122,7 +126,10 @@ export function Toolbar({
   onCropAndDownload,
   onPromptInpaint,
   canCancelTask,
+  activeTaskCount,
+  taskRecordCount,
   onCancelTask,
+  onOpenTaskCenter,
   onBatchImagesSelected,
   zoom,
   onResetZoomPan,
@@ -345,6 +352,16 @@ export function Toolbar({
           <button className="secondaryButton sketch-box" disabled={!canCancelTask} onClick={onCancelTask}>
             <XCircle size={18} />
             <span>取消任务</span>
+          </button>
+
+          <button
+            className="secondaryButton sketch-box taskCenterButton"
+            disabled={taskRecordCount === 0}
+            onClick={onOpenTaskCenter}
+            title="查看后台任务进度"
+          >
+            <ListChecks size={18} />
+            <span>任务{activeTaskCount > 0 ? ` ${activeTaskCount}` : ""}</span>
           </button>
         </div>
 

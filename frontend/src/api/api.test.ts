@@ -132,6 +132,7 @@ describe("api", () => {
 
   it("reports backend task progress messages while polling", async () => {
     const onProgress = vi.fn();
+    const onTaskProgress = vi.fn();
     vi.stubGlobal(
       "fetch",
       vi
@@ -180,11 +181,21 @@ describe("api", () => {
         maskDilate: 0,
         maskBlur: 0,
         onProgress,
+        onTaskProgress,
       },
       { pollIntervalMs: 1 },
     );
 
     expect(onProgress).toHaveBeenCalledWith("Running inpaint 20%");
+    expect(onTaskProgress).toHaveBeenCalledWith(
+      "task-1",
+      expect.objectContaining({
+        state: "STARTED",
+        status: "running",
+        progress: 20,
+        message: "Running inpaint",
+      }),
+    );
   });
 
   it("exposes the submitted task id to callers", async () => {
@@ -316,6 +327,62 @@ describe("api", () => {
         { pollIntervalMs: 1 },
       ),
     ).rejects.toThrow("任务已取消");
+  });
+
+  it("marks task progress as failed when result download fails after completion", async () => {
+    const onTaskProgress = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              task_id: "task-1",
+              status: "queued",
+              status_url: "/api/tasks/task-1",
+              result_url: "/api/tasks/task-1/result",
+            }),
+            { status: 202, headers: { "content-type": "application/json" } },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              task_id: "task-1",
+              state: "SUCCESS",
+              status: "completed",
+              result_url: "/api/tasks/task-1/result",
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ detail: "result missing" }), {
+            status: 404,
+            headers: { "content-type": "application/json" },
+          }),
+        ),
+    );
+
+    await expect(
+      inpaintImage(
+        {
+          image: new File(["image"], "source.png", { type: "image/png" }),
+          mask: new Blob(["mask"], { type: "image/png" }),
+          maskDilate: 0,
+          maskBlur: 0,
+          onTaskProgress,
+        },
+        { pollIntervalMs: 1 },
+      ),
+    ).rejects.toThrow("result missing");
+
+    expect(onTaskProgress).toHaveBeenLastCalledWith("task-1", {
+      status: "failed",
+      message: "result missing",
+      error: "result missing",
+    });
   });
 
   it("submits a task cancellation request", async () => {

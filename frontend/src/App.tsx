@@ -1,9 +1,11 @@
 import { Activity, Cpu, ImagePlus, MonitorCheck, Sparkles } from "lucide-react";
+import { useState } from "react";
 
 import { ResultPane } from "./components/ResultPane";
 import { Toolbar } from "./components/Toolbar";
 import { Modal } from "./components/Modal";
 import { Progress } from "./components/Progress";
+import { TaskCenter } from "./components/TaskCenter";
 import { hasPaintedPixels } from "./utils/mask";
 import { firstImageFile } from "./utils/fileSelection";
 import { useStore } from "./store/useStore";
@@ -16,6 +18,8 @@ import { useImageWorkspace } from "./hooks/useImageWorkspace";
 import { clearAppState } from "./utils/db";
 
 export default function App() {
+  const [isTaskCenterOpen, setIsTaskCenterOpen] = useState(false);
+
   // Bind global hotkeys (Undo, Redo, Brush adjust, Tool selector)
   useShortcut();
 
@@ -89,7 +93,15 @@ export default function App() {
     handleDrop,
   } = useImageWorkspace();
 
-  const { activeTaskIds, registerTask, unregisterTask, cancelActiveTasks } = useTaskPolling(reloadOverlay);
+  const {
+    activeTaskIds,
+    taskRecords,
+    registerTask,
+    updateTask,
+    unregisterTask,
+    cancelActiveTasks,
+    clearSettledTasks,
+  } = useTaskPolling(reloadOverlay);
 
   const {
     repairImage,
@@ -97,9 +109,9 @@ export default function App() {
     enhanceResolution,
     cropAndDownload,
     redrawWithPrompt,
-  } = useImageActions(imageElementRef, registerTask, unregisterTask);
+  } = useImageActions(imageElementRef, registerTask, updateTask, unregisterTask);
 
-  const { processBatch } = useBatchActions(registerTask, unregisterTask);
+  const { processBatch } = useBatchActions(registerTask, updateTask, unregisterTask);
 
   // Derived state
   const canUndo = historyStack.length > 0;
@@ -195,7 +207,10 @@ export default function App() {
         onCropAndDownload={() => void cropAndDownload()}
         onPromptInpaint={() => void redrawWithPrompt()}
         canCancelTask={canCancelTask}
+        activeTaskCount={activeTaskIds.length}
+        taskRecordCount={taskRecords.length}
         onCancelTask={() => void cancelActiveTasks()}
+        onOpenTaskCenter={() => setIsTaskCenterOpen(true)}
         onBatchImagesSelected={(operation, files) => void processBatch(operation, files)}
         zoom={zoom}
         onResetZoomPan={resetZoomPan}
@@ -291,6 +306,23 @@ export default function App() {
             label={`正在生成${batchProgress.operation}：${batchProgress.filename}`}
           />
         )}
+      </Modal>
+
+      <Modal
+        isOpen={isTaskCenterOpen}
+        title="后台任务中心"
+        footer={
+          <button className="primaryButton" onClick={() => setIsTaskCenterOpen(false)}>
+            关闭
+          </button>
+        }
+      >
+        <TaskCenter
+          records={taskRecords}
+          canCancelTask={canCancelTask}
+          onCancelActive={() => void cancelActiveTasks()}
+          onClearSettled={clearSettledTasks}
+        />
       </Modal>
     </main>
   );

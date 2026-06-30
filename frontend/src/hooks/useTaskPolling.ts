@@ -8,13 +8,21 @@ import { cancelInpaintTask, segmentImageMask } from "../api/api";
 import { useStore } from "../store/useStore";
 import { pngBlobToMaskData } from "../utils/canvasExport";
 import { mergeMasks } from "../utils/mask";
-import { cancelTrackedTasks } from "../utils/taskLifecycle";
+import {
+  cancelTrackedTasks,
+  createTaskRecord,
+  isTaskRecordActive,
+  mergeTaskProgress,
+  type TaskProgressUpdate,
+  type TaskRecord,
+} from "../utils/taskLifecycle";
 
 /**
  * 管理智能分割副作用与 Celery 任务集合，向界面提供统一取消入口。
  */
 export function useTaskPolling(reloadOverlay: () => void) {
-  const [activeTaskIds, setActiveTaskIds] = useState<string[]>([]);
+  const [taskRecords, setTaskRecords] = useState<TaskRecord[]>([]);
+  const activeTaskIds = taskRecords.filter(isTaskRecordActive).map((record) => record.id);
 
   const smartSegmentPoint = useStore((state) => state.smartSegmentPoint);
   const smartSegmentRequestId = useStore((state) => state.smartSegmentRequestId);
@@ -72,14 +80,31 @@ export function useTaskPolling(reloadOverlay: () => void) {
     smartSegmentRequestId,
   ]);
 
-  /** 登记刚入队的任务，使用去重数组触发 React 重新渲染。 */
-  const registerTask = useCallback((taskId: string) => {
-    setActiveTaskIds((current) => current.includes(taskId) ? current : [...current, taskId]);
+  /** 登记刚入队的任务，并保留最近的任务历史供任务中心展示。 */
+  const registerTask = useCallback((taskId: string, label = "后台任务") => {
+    setTaskRecords((current) => {
+      if (current.some((record) => record.id === taskId)) return current;
+      return [createTaskRecord(taskId, label), ...current].slice(0, 30);
+    });
   }, []);
 
-  /** 在任务成功、失败、取消或轮询超时后移除对应 ID。 */
+  /** 合并后端轮询返回的结构化任务状态。 */
+  const updateTask = useCallback((taskId: string, update: TaskProgressUpdate) => {
+    setTaskRecords((current) => {
+      const existing = current.find((record) => record.id === taskId);
+      if (!existing) return [mergeTaskProgress(createTaskRecord(taskId, "后台任务"), update), ...current].slice(0, 30);
+      return current.map((record) => record.id === taskId ? mergeTaskProgress(record, update) : record);
+    });
+  }, []);
+
+  /** 在任务请求自然结束时兜底标记完成；失败或取消状态不会被覆盖。 */
   const unregisterTask = useCallback((taskId: string) => {
-    setActiveTaskIds((current) => current.filter((candidate) => candidate !== taskId));
+    setTaskRecords((current) =>
+      current.map((record) => {
+        if (record.id !== taskId || !isTaskRecordActive(record)) return record;
+        return mergeTaskProgress(record, { status: "completed", progress: 100, message: "任务完成" });
+      }),
+    );
   }, []);
 
   /** 取消当前登记的全部任务；失败的 ID 会保留，允许用户再次操作。 */
@@ -87,9 +112,26 @@ export function useTaskPolling(reloadOverlay: () => void) {
     if (activeTaskIds.length === 0) return;
     setStatus(`正在取消 ${activeTaskIds.length} 个任务`);
     const remaining = await cancelTrackedTasks(activeTaskIds, cancelInpaintTask);
-    setActiveTaskIds(remaining);
+    setTaskRecords((current) =>
+      current.map((record) => {
+        if (!activeTaskIds.includes(record.id) || remaining.includes(record.id)) return record;
+        return mergeTaskProgress(record, { status: "cancelled", message: "任务已取消" });
+      }),
+    );
     setStatus(remaining.length === 0 ? "任务已取消" : `${remaining.length} 个任务取消失败`);
   }
 
-  return { activeTaskIds, registerTask, unregisterTask, cancelActiveTasks };
+  function clearSettledTasks() {
+    setTaskRecords((current) => current.filter(isTaskRecordActive));
+  }
+
+  return {
+    activeTaskIds,
+    taskRecords,
+    registerTask,
+    updateTask,
+    unregisterTask,
+    cancelActiveTasks,
+    clearSettledTasks,
+  };
 }

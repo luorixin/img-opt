@@ -3,6 +3,8 @@
  * @description 封装图像处理 HTTP 请求、异步任务轮询和任务取消协议。
  */
 
+import type { TaskProgressUpdate } from "../utils/taskLifecycle";
+
 export type InpaintRequest = {
   image: File;
   mask: Blob;
@@ -10,6 +12,7 @@ export type InpaintRequest = {
   maskBlur: number;
   onProgress?: (message: string) => void;
   onTaskSubmitted?: (taskId: string) => void;
+  onTaskProgress?: (taskId: string, update: TaskProgressUpdate) => void;
   onTaskSettled?: (taskId: string) => void;
 };
 
@@ -36,6 +39,7 @@ export type PromptInpaintRequest = {
   seed?: number;
   onProgress?: (message: string) => void;
   onTaskSubmitted?: (taskId: string) => void;
+  onTaskProgress?: (taskId: string, update: TaskProgressUpdate) => void;
   onTaskSettled?: (taskId: string) => void;
 };
 
@@ -44,6 +48,7 @@ export type RemoveBackgroundRequest = {
   format?: string;
   onProgress?: (message: string) => void;
   onTaskSubmitted?: (taskId: string) => void;
+  onTaskProgress?: (taskId: string, update: TaskProgressUpdate) => void;
   onTaskSettled?: (taskId: string) => void;
 };
 
@@ -54,6 +59,7 @@ export type UpscaleRequest = {
   format?: string;
   onProgress?: (message: string) => void;
   onTaskSubmitted?: (taskId: string) => void;
+  onTaskProgress?: (taskId: string, update: TaskProgressUpdate) => void;
   onTaskSettled?: (taskId: string) => void;
 };
 
@@ -80,6 +86,7 @@ export async function inpaintImage(request: InpaintRequest, options: InpaintOpti
     const task = (await response.json()) as InpaintTaskSubmission;
     request.onTaskSubmitted?.(task.task_id);
     request.onProgress?.("任务已入队");
+    request.onTaskProgress?.(task.task_id, { status: "queued", message: "任务已入队", progress: 0 });
     return pollInpaintTask(task, request, options);
   }
 
@@ -135,6 +142,7 @@ export async function promptInpaintImage(
     const task = (await response.json()) as InpaintTaskSubmission;
     request.onTaskSubmitted?.(task.task_id);
     request.onProgress?.("重绘任务已入队");
+    request.onTaskProgress?.(task.task_id, { status: "queued", message: "重绘任务已入队", progress: 0 });
     return pollInpaintTask(task, request, options);
   }
   if (!response.ok) {
@@ -170,6 +178,7 @@ async function pollInpaintTask(
   task: InpaintTaskSubmission,
   request: {
     onProgress?: (message: string) => void;
+    onTaskProgress?: (taskId: string, update: TaskProgressUpdate) => void;
     onTaskSettled?: (taskId: string) => void;
   },
   options: InpaintOptions,
@@ -187,19 +196,37 @@ async function pollInpaintTask(
       }
 
       const status = (await response.json()) as InpaintTaskStatus;
+      request.onTaskProgress?.(task.task_id, status);
       if (status.status === "completed") {
         request.onProgress?.("任务完成，下载结果中");
-        return fetchTaskResult(status.result_url ?? task.result_url);
+        try {
+          return await fetchTaskResult(status.result_url ?? task.result_url);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "任务结果下载失败";
+          request.onTaskProgress?.(task.task_id, {
+            status: "failed",
+            message,
+            error: message,
+          });
+          throw error;
+        }
       }
       if (status.status === "failed") {
+        request.onTaskProgress?.(task.task_id, {
+          status: "failed",
+          message: status.error || "修复任务失败",
+          error: status.error,
+        });
         throw new Error(status.error || "修复任务失败");
       }
       if (status.status === "cancelled") {
+        request.onTaskProgress?.(task.task_id, { status: "cancelled", message: "任务已取消" });
         throw new Error("任务已取消");
       }
       request.onProgress?.(formatTaskProgress(status));
     }
 
+    request.onTaskProgress?.(task.task_id, { status: "failed", message: "修复任务超时", error: "修复任务超时" });
     throw new Error("修复任务超时");
   } finally {
     request.onTaskSettled?.(task.task_id);
@@ -244,6 +271,7 @@ export async function removeBackground(request: RemoveBackgroundRequest, options
     const task = (await response.json()) as InpaintTaskSubmission;
     request.onTaskSubmitted?.(task.task_id);
     request.onProgress?.("消除背景任务已入队");
+    request.onTaskProgress?.(task.task_id, { status: "queued", message: "消除背景任务已入队", progress: 0 });
     return pollInpaintTask(task, request, options);
   }
 
@@ -276,6 +304,7 @@ export async function upscaleImage(request: UpscaleRequest, options: InpaintOpti
     const task = (await response.json()) as InpaintTaskSubmission;
     request.onTaskSubmitted?.(task.task_id);
     request.onProgress?.("超分任务已入队");
+    request.onTaskProgress?.(task.task_id, { status: "queued", message: "超分任务已入队", progress: 0 });
     return pollInpaintTask(task, request, options);
   }
 

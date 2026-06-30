@@ -9,12 +9,14 @@ import { downloadBlobs, downloadBlob } from "../utils/crop";
 import { imageFiles } from "../utils/fileSelection";
 import { removeBackground, upscaleImage } from "../api/api";
 import { useStore } from "../store/useStore";
+import type { TaskProgressUpdate } from "../utils/taskLifecycle";
 
 /**
  * 创建批量图片处理动作；AI 模式下每个子任务都会独立登记和注销。
  */
 export function useBatchActions(
-  registerTask: (taskId: string) => void,
+  registerTask: (taskId: string, label?: string) => void,
+  updateTask: (taskId: string, update: TaskProgressUpdate) => void,
   unregisterTask: (taskId: string) => void,
 ) {
   const setStatus = useStore((state) => state.setStatus);
@@ -47,7 +49,8 @@ export function useBatchActions(
               return removeBackground({
                 image: file,
                 format: exportFormat === "JPEG" ? "PNG" : exportFormat,
-                onTaskSubmitted: registerTask,
+                onTaskSubmitted: (taskId) => registerTask(taskId, `批量透明：${file.name}`),
+                onTaskProgress: updateTask,
                 onTaskSettled: unregisterTask,
               });
             }
@@ -62,7 +65,8 @@ export function useBatchActions(
               image: file,
               upscaleFactor,
               format: exportFormat,
-              onTaskSubmitted: registerTask,
+              onTaskSubmitted: (taskId) => registerTask(taskId, `批量清晰：${file.name}`),
+              onTaskProgress: updateTask,
               onTaskSettled: unregisterTask,
             });
           }

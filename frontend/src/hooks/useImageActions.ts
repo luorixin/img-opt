@@ -18,13 +18,15 @@ import {
 } from "../utils/crop";
 import { hasPaintedPixels } from "../utils/mask";
 import { useStore } from "../store/useStore";
+import type { TaskProgressUpdate } from "../utils/taskLifecycle";
 
 /**
  * 创建单图处理动作，并通过任务登记回调跟踪所有异步请求。
  */
 export function useImageActions(
   imageElementRef: React.RefObject<HTMLImageElement | null>,
-  registerTask: (id: string) => void,
+  registerTask: (id: string, label?: string) => void,
+  updateTask: (id: string, update: TaskProgressUpdate) => void,
   unregisterTask: (id: string) => void,
 ) {
   const image = useStore((state) => state.image);
@@ -61,7 +63,8 @@ export function useImageActions(
         maskDilate,
         maskBlur,
         onProgress: setStatus,
-        onTaskSubmitted: registerTask,
+        onTaskSubmitted: (taskId) => registerTask(taskId, "图片修复"),
+        onTaskProgress: updateTask,
         onTaskSettled: unregisterTask,
       });
       if (resultUrl) URL.revokeObjectURL(resultUrl);
@@ -88,7 +91,8 @@ export function useImageActions(
           image: image.file,
           format: exportFormat === "JPEG" ? "PNG" : exportFormat,
           onProgress: setStatus,
-          onTaskSubmitted: registerTask,
+          onTaskSubmitted: (taskId) => registerTask(taskId, "AI 透明背景"),
+          onTaskProgress: updateTask,
           onTaskSettled: unregisterTask,
         });
       } else {
@@ -124,7 +128,8 @@ export function useImageActions(
           upscaleFactor,
           format: exportFormat,
           onProgress: setStatus,
-          onTaskSubmitted: registerTask,
+          onTaskSubmitted: (taskId) => registerTask(taskId, `AI 清晰增强 ${upscaleFactor}x`),
+          onTaskProgress: updateTask,
           onTaskSettled: unregisterTask,
         });
       } else {
@@ -163,7 +168,8 @@ export function useImageActions(
               crop: cropStr,
               format: exportFormat,
               onProgress: (msg) => setStatus(`区域 ${index + 1}: ${msg}`),
-              onTaskSubmitted: registerTask,
+              onTaskSubmitted: (taskId) => registerTask(taskId, `AI 切图区域 ${index + 1}`),
+              onTaskProgress: updateTask,
               onTaskSettled: unregisterTask,
             });
           } else {
@@ -224,7 +230,8 @@ export function useImageActions(
         mask: maskBlob,
         prompt: activePrompt,
         onProgress: setStatus,
-        onTaskSubmitted: registerTask,
+        onTaskSubmitted: (taskId) => registerTask(taskId, "提示词重绘"),
+        onTaskProgress: updateTask,
         onTaskSettled: unregisterTask,
       });
       if (resultUrl) URL.revokeObjectURL(resultUrl);

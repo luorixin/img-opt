@@ -1014,6 +1014,138 @@ a {
   transition: width 0.3s ease-out;
 }
 
+/* Task Center Styles */
+.taskCenter {
+  display: grid;
+  gap: 14px;
+}
+
+.taskCenterActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.taskEmpty {
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  color: var(--text-dim);
+  background: rgb(8 15 28 / 36%);
+}
+
+.taskList {
+  display: grid;
+  gap: 10px;
+  max-height: min(52vh, 420px);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.taskItem {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgb(8 15 28 / 56%);
+}
+
+.taskIcon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--accent);
+  background: rgb(0 212 255 / 8%);
+}
+
+.taskInfo {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.taskTitleRow,
+.taskMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 10px;
+}
+
+.taskTitleRow strong,
+.taskMessage {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taskTitleRow strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.taskMessage,
+.taskMeta {
+  color: var(--text-soft);
+  font-size: 11px;
+}
+
+.taskStatus {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: var(--text-soft);
+  background: rgb(49 65 88 / 36%);
+  font-size: 10px;
+}
+
+.taskStatus-running,
+.taskStatus-retrying,
+.taskStatus-queued,
+.taskStatus-pending {
+  color: var(--accent);
+  background: rgb(0 212 255 / 10%);
+}
+
+.taskStatus-completed {
+  color: #7fffc1;
+  background: rgb(47 255 171 / 10%);
+}
+
+.taskStatus-failed {
+  color: var(--danger);
+  background: rgb(255 95 122 / 12%);
+}
+
+.taskStatus-cancelled {
+  color: #c0c8d6;
+  background: rgb(144 161 185 / 12%);
+}
+
+.taskProgressTrack {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(49 65 88 / 36%);
+}
+
+.taskProgressFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent));
+  transition: width 0.2s ease;
+}
+
 /* Before/After 对比滑动条样式 */
 .sliderContainer {
   position: relative;
